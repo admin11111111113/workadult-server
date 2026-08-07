@@ -9,12 +9,10 @@
   body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; }
   .topbar { background: #1a1d24; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #262a33; }
   .topbar h1 { margin: 0; font-size: 16px; color: #e91e8c; }
-  .tabs { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid #262a33; }
-  .tab { padding: 10px 20px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; color: #9aa0aa; background: #1a1d24; border: 1px solid #262a33; border-bottom: none; }
-  .tab.active { background: #0f1115; color: #fff; border-color: #262a33; }
   .content { padding: 24px; }
-  .panel { display: none; }
-  .panel.active { display: block; }
+  .section-block { margin-bottom: 40px; padding-top: 28px; border-top: 1px solid #262a33; }
+  .section-block:first-child { padding-top: 0; border-top: none; }
+  .section-block > h2 { font-size: 18px; margin: 0 0 16px; }
 
   /* Обзор */
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-bottom: 32px; }
@@ -151,18 +149,9 @@
   </form>
 </div>
 
-<div class="tabs">
-  <div class="tab active" onclick="showTab('overview')">📊 Обзор</div>
-  <div class="tab" onclick="showTab('cities')">🏙️ По городам</div>
-  <div class="tab" onclick="showTab('catalog')">🗂️ Каталог</div>
-  <div class="tab" onclick="showTab('vacancies')">💼 Вакансии</div>
-  <div class="tab" onclick="showTab('studii')">🏙️ Студии (каталог)</div>
-</div>
-
 <div class="content">
 
-  <!-- ОБЗОР -->
-  <div class="panel active" id="tab-overview">
+  <div class="section-block">
     <div class="stats-grid">
       <div class="stat-card">
         <b>{{ occupied }}</b>
@@ -183,7 +172,7 @@
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
-      <h3>Тарифы на размещение (Каталог / По городам)</h3>
+      <h3>Тарифы на размещение студий</h3>
       <form method="post" action="/admin/pricing/save">
         <div class="tier-row tier-row-gold">
           <span class="tier-label">🥇 Золото</span>
@@ -243,95 +232,9 @@
     </div>
   </div>
 
-  <!-- ПО ГОРОДАМ -->
-  <div class="panel" id="tab-cities">
-    <div class="search-box">
-      <input type="text" id="citySearch" placeholder="🔍 Поиск города..." oninput="filterCities(this.value)">
-    </div>
-
-    <div class="city-grid" id="cityGrid">
-      {% set cities = [
-        'Москва','Санкт-Петербург','Новосибирск','Екатеринбург','Казань',
-        'Нижний Новгород','Челябинск','Красноярск','Самара','Уфа',
-        'Ростов-на-Дону','Краснодар','Омск','Воронеж','Пермь','Волгоград',
-        'Саратов','Тюмень','Барнаул','Ижевск','Калининград','Кемерово',
-        'Томск','Сочи','Иркутск','Анапа','Белгород','Бийск','Владивосток',
-        'Владимир','Вологда','Дзержинск','Евпатория','Иваново','Йошкар-Ола',
-        'Калуга','Киров','Курск','Липецк','Набережные Челны','Нальчик',
-        'Нижневартовск','Нижнекамск','Нижний Тагил','Новокузнецк','Новороссийск',
-        'Оренбург','Пенза','Псков','Севастополь','Симферополь','Ставрополь',
-        'Стерлитамак','Сургут','Таганрог','Тамбов','Тверь','Тольятти','Тула',
-        'Ульяновск','Чайковский','Чебоксары','Чита','Энгельс','Ярославль',
-        'Беларусь','Украина','Казахстан','Кыргызстан','Молдова'
-      ] %}
-      {% for city in cities %}
-      {% set city_occupied = [] %}
-      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and not s.expired %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
-      <div class="city-btn {% if city_occupied|length > 0 %}{% endif %}" 
-           onclick="showCity('{{ city }}')" 
-           data-city="{{ city }}">
-        {{ city }}
-        {% if city_occupied|length > 0 %}
-        <div class="count">{{ city_occupied|length }} студ.</div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-
-    <div class="slots-panel" id="slotsPanel">
-      <div class="slots-title">
-        <span id="cityTitle">Выберите город</span>
-        <span style="font-size:13px;color:#9aa0aa" id="citySubtitle"></span>
-      </div>
-      <div class="slots-grid" id="slotsGrid"></div>
-    </div>
-  </div>
-
-  <!-- КАТАЛОГ -->
-  <div class="panel" id="tab-catalog">
-    <div class="catalog-toolbar">
-      <span style="font-size:13px;color:#9aa0aa">Карточки — как их видят посетители сайта</span>
-      <button class="btn-add" onclick="toggleAddCard()">+ Добавить в каталог</button>
-    </div>
-
-    <div class="add-card" id="addCard">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Название студии</label>
-          <input id="addName" placeholder="Название">
-        </div>
-        <div class="form-group">
-          <label>Город</label>
-          <input id="addCity" placeholder="Город">
-        </div>
-        <div class="form-group full">
-          <label>Описание</label>
-          <textarea id="addDesc" placeholder="Описание студии"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Фото (URL)</label>
-          <input id="addPhoto" placeholder="https://...">
-        </div>
-        <div class="form-group">
-          <label>Сайт (URL)</label>
-          <input id="addUrl" placeholder="https://...">
-        </div>
-        <div class="form-group full">
-          <label>Контакты (Telegram, телефон)</label>
-          <input id="addContacts" placeholder="@studio или +7...">
-        </div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn-save" onclick="submitAdd()">💾 Добавить в каталог</button>
-        <button class="btn btn-hide" onclick="toggleAddCard()">Отмена</button>
-      </div>
-    </div>
-
-    <div class="cat-grid" id="catGrid"></div>
-  </div>
-
   <!-- ВАКАНСИИ -->
-  <div class="panel" id="tab-vacancies">
+  <div class="section-block">
+    <h2>💼 Вакансии</h2>
     <div class="catalog-toolbar">
       <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи с сайта — подмешивается к тем же карточкам на главной и в «Вакансиях»</span>
       <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
@@ -341,7 +244,7 @@
     {% if vac_top5 %}
     <div class="vboard-row">
       {% for v in vac_top5 %}
-      <div class="vboard-card" onclick="showTab('vacancies');document.getElementById('vac-{{ v.key }}').classList.add('open');document.getElementById('vac-{{ v.key }}').scrollIntoView({behavior:'smooth',block:'center'})">
+      <div class="vboard-card" onclick="document.getElementById('vac-{{ v.key }}').classList.add('open');document.getElementById('vac-{{ v.key }}').scrollIntoView({behavior:'smooth',block:'center'})">
         <span class="pin">★ ТОП</span>
         <div class="org">{{ v.org }}</div>
         <div class="title">{{ v.title }}</div>
@@ -448,8 +351,54 @@
     </div>
   </div>
 
+  <!-- ПО ГОРОДАМ -->
+  <div class="section-block">
+    <h2>🏙️ Студии по городам</h2>
+    <div class="search-box">
+      <input type="text" id="citySearch" placeholder="🔍 Поиск города..." oninput="filterCities(this.value)">
+    </div>
+
+    <div class="city-grid" id="cityGrid">
+      {% set cities = [
+        'Москва','Санкт-Петербург','Новосибирск','Екатеринбург','Казань',
+        'Нижний Новгород','Челябинск','Красноярск','Самара','Уфа',
+        'Ростов-на-Дону','Краснодар','Омск','Воронеж','Пермь','Волгоград',
+        'Саратов','Тюмень','Барнаул','Ижевск','Калининград','Кемерово',
+        'Томск','Сочи','Иркутск','Анапа','Белгород','Бийск','Владивосток',
+        'Владимир','Вологда','Дзержинск','Евпатория','Иваново','Йошкар-Ола',
+        'Калуга','Киров','Курск','Липецк','Набережные Челны','Нальчик',
+        'Нижневартовск','Нижнекамск','Нижний Тагил','Новокузнецк','Новороссийск',
+        'Оренбург','Пенза','Псков','Севастополь','Симферополь','Ставрополь',
+        'Стерлитамак','Сургут','Таганрог','Тамбов','Тверь','Тольятти','Тула',
+        'Ульяновск','Чайковский','Чебоксары','Чита','Энгельс','Ярославль',
+        'Беларусь','Украина','Казахстан','Кыргызстан','Молдова'
+      ] %}
+      {% for city in cities %}
+      {% set city_occupied = [] %}
+      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and not s.expired %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
+      <div class="city-btn {% if city_occupied|length > 0 %}{% endif %}"
+           onclick="showCity('{{ city }}')"
+           data-city="{{ city }}">
+        {{ city }}
+        {% if city_occupied|length > 0 %}
+        <div class="count">{{ city_occupied|length }} студ.</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="slots-panel" id="slotsPanel">
+      <div class="slots-title">
+        <span id="cityTitle">Выберите город</span>
+        <span style="font-size:13px;color:#9aa0aa" id="citySubtitle"></span>
+      </div>
+      <div class="slots-grid" id="slotsGrid"></div>
+    </div>
+  </div>
+
   <!-- СТУДИИ (студий-каталог с сайта) -->
-  <div class="panel" id="tab-studii">
+  <div class="section-block">
+    <h2>🗂️ Студии (каталог studii-katalog.html)</h2>
     <div class="catalog-toolbar">
       <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи через Telegram-бота на studii-katalog.html — подмешивается к тем же карточкам</span>
       <button class="btn-add" onclick="toggleStudiiAddCard()">+ Добавить студию</button>
@@ -585,13 +534,6 @@ function tierForRank(rank) {
   return {tier: 'regular', price: PRICING.regular_price};
 }
 
-function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies','studii'][i] === name));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'catalog') renderCatalog();
-}
-
 /* ---------- Посещаемость (Яндекс.Метрика) ---------- */
 async function loadTraffic() {
   const box = document.getElementById('trafficBox');
@@ -616,54 +558,6 @@ async function loadTraffic() {
   }
 }
 loadTraffic();
-
-/* ---------- Каталог (карточки как на сайте, сгруппировано по городам) ---------- */
-function renderCatalog() {
-  const grid = document.getElementById('catGrid');
-  const items = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.expired);
-  if (!items.length) {
-    grid.innerHTML = '<div class="cat-empty">В каталоге пока никого нет</div>';
-    return;
-  }
-  const byCity = {};
-  items.forEach(s => { (byCity[s.city || 'Без города'] = byCity[s.city || 'Без города'] || []).push(s); });
-  const cities = Object.keys(byCity).sort();
-
-  grid.innerHTML = cities.map(city => {
-    const list = byCity[city].slice().sort((a, b) => (b.price || 0) - (a.price || 0));
-    const cards = list.map(s => {
-      const tier = s.tier || 'regular';
-      const price = s.price != null ? s.price : PRICING.regular_price;
-      const perm = tier === 'regular';
-      return `
-      <div class="cat-card ${tier !== 'regular' ? 'tier-' + tier : ''}">
-        <div class="cat-badge">
-          <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
-          <span>$${price}${perm ? ' разово · навсегда' : '/мес'}</span>
-        </div>
-        ${s.photo ? `<img class="cat-photo" src="${s.photo}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="cat-name">${s.name}</div>
-        <div class="cat-city">📍 ${s.city || ''}</div>
-        ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
-        ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
-        ${s.url ? `<div class="cat-url"><a href="${s.url}" target="_blank">🌐 ${s.url}</a></div>` : ''}
-        <div class="cat-actions">
-          <form method="post" action="/admin/slot/${s.slot}/delete" onsubmit="return confirm('Убрать из каталога?')">
-            <button class="btn btn-delete" type="submit">🗑 Убрать из каталога</button>
-          </form>
-        </div>
-      </div>`;
-    }).join('');
-    return `<div class="cat-city-group" style="grid-column:1/-1;margin-top:20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:10px">📍 ${city} <span style="font-size:12px;color:#9aa0aa;font-weight:400">— ${list.length} студ.</span></div>
-      <div class="cat-grid">${cards}</div>
-    </div>`;
-  }).join('');
-}
-
-function toggleAddCard() {
-  document.getElementById('addCard').classList.toggle('open');
-}
 
 /* ---------- Вакансии ---------- */
 function toggleVacAddCard() {
@@ -725,32 +619,6 @@ function submitStudiiAdd() {
   document.querySelectorAll('.stFmt:checked').forEach(cb => {
     const inp = document.createElement('input');
     inp.type = 'hidden'; inp.name = 'fmt'; inp.value = cb.value;
-    form.appendChild(inp);
-  });
-  document.body.appendChild(form);
-  form.submit();
-}
-
-async function submitAdd() {
-  const name = document.getElementById('addName').value.trim();
-  const city = document.getElementById('addCity').value.trim();
-  if (!name || !city) { alert('Заполните название и город'); return; }
-  const free = ALL_SLOTS.find(s => !s.name);
-  if (!free) { alert('Нет свободных мест из 100 — сначала освободите слот'); return; }
-
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = '/admin/slot/' + free.slot;
-  const fields = {
-    name: name, city: city,
-    desc: document.getElementById('addDesc').value,
-    photo: document.getElementById('addPhoto').value,
-    url: document.getElementById('addUrl').value,
-    contacts: document.getElementById('addContacts').value
-  };
-  Object.entries(fields).forEach(([k, v]) => {
-    const inp = document.createElement('input');
-    inp.type = 'hidden'; inp.name = k; inp.value = v;
     form.appendChild(inp);
   });
   document.body.appendChild(form);
