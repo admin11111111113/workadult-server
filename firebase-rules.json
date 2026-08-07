@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "workadult_studios": {
+      ".read": true,
+      ".write": false,
+      "$slot": {
+        ".validate": "newData.hasChildren(['status'])"
+      }
+    }
+  }
+}

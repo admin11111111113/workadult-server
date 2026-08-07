@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>workadult.pro — вход в админку</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6;
+         display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  form { background: #1a1d24; padding: 32px; border-radius: 12px; width: 300px; }
+  h1 { font-size: 18px; margin: 0 0 20px; }
+  input { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 6px;
+          border: 1px solid #333; background: #0f1115; color: #fff; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; border-radius: 6px; border: none;
+           background: #e91e8c; color: #fff; cursor: pointer; font-weight: 600; }
+  .err { color: #ff6b6b; font-size: 13px; margin-bottom: 12px; }
+  .logo { text-align: center; color: #e91e8c; font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<form method="post" action="/admin/login">
+  <div class="logo">workadult.pro</div>
+  <h1>Вход в админку</h1>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <input type="password" name="password" placeholder="Пароль" autofocus required>
+  <button type="submit">Войти</button>
+</form>
+</body>
+</html>
