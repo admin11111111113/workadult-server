@@ -73,6 +73,28 @@
   .btn-move { background: #2a2e38; color: #e6e6e6; display: flex; gap: 6px; align-items: center; }
   .btn-move input { width: 50px; padding: 4px 8px; border-radius: 4px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 12px; }
   button.small { background: #2a2e38; color: #e6e6e6; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+  /* Посещаемость */
+  .traffic-note { color: #9aa0aa; font-size: 12px; padding: 10px 0; }
+
+  /* Каталог — карточки как на публичном сайте */
+  .catalog-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .btn-add { background: #e91e8c; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
+  .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .cat-card { background: #12121a; border-radius: 12px; padding: 18px; border: 1px solid #1e1e2e; }
+  .cat-card.premium { border-color: #3a2a10; background: #14120a; }
+  .cat-badge { font-size: 10px; color: #555; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .cat-badge.premium { color: #f0b429; }
+  .cat-photo { width: 100%; height: 140px; object-fit: cover; border-radius: 8px; margin-bottom: 10px; }
+  .cat-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .cat-city { font-size: 12px; color: #9aa0aa; margin-bottom: 8px; }
+  .cat-desc { font-size: 12px; line-height: 1.5; color: #bbb; margin-bottom: 10px; max-height: 54px; overflow: hidden; }
+  .cat-contacts { font-size: 12px; color: #e91e8c; margin-bottom: 4px; }
+  .cat-url a { font-size: 12px; color: #6fdc8c; text-decoration: none; }
+  .cat-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .cat-empty { text-align: center; padding: 60px 0; color: #555; }
+  .add-card { background: #1a1d24; border-radius: 12px; padding: 20px; border: 1px dashed #e91e8c; margin-bottom: 20px; display: none; }
+  .add-card.open { display: block; }
 </style>
 </head>
 <body>
@@ -87,6 +109,7 @@
 <div class="tabs">
   <div class="tab active" onclick="showTab('overview')">📊 Обзор</div>
   <div class="tab" onclick="showTab('cities')">🏙️ По городам</div>
+  <div class="tab" onclick="showTab('catalog')">🗂️ Каталог</div>
 </div>
 
 <div class="content">
@@ -110,6 +133,11 @@
         <b>${{ occupied * 0 }}</b>
         <span>доход/мес (примерно)</span>
       </div>
+    </div>
+
+    <div class="city-stats" style="margin-bottom:32px">
+      <h3>Посещаемость сайта (Яндекс.Метрика)</h3>
+      <div id="trafficBox"><div class="traffic-note">⏳ загрузка...</div></div>
     </div>
 
     <div class="city-stats">
@@ -182,6 +210,49 @@
     </div>
   </div>
 
+  <!-- КАТАЛОГ -->
+  <div class="panel" id="tab-catalog">
+    <div class="catalog-toolbar">
+      <span style="font-size:13px;color:#9aa0aa">Карточки — как их видят посетители сайта</span>
+      <button class="btn-add" onclick="toggleAddCard()">+ Добавить в каталог</button>
+    </div>
+
+    <div class="add-card" id="addCard">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Название студии</label>
+          <input id="addName" placeholder="Название">
+        </div>
+        <div class="form-group">
+          <label>Город</label>
+          <input id="addCity" placeholder="Город">
+        </div>
+        <div class="form-group full">
+          <label>Описание</label>
+          <textarea id="addDesc" placeholder="Описание студии"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Фото (URL)</label>
+          <input id="addPhoto" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>Сайт (URL)</label>
+          <input id="addUrl" placeholder="https://...">
+        </div>
+        <div class="form-group full">
+          <label>Контакты (Telegram, телефон)</label>
+          <input id="addContacts" placeholder="@studio или +7...">
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn-save" onclick="submitAdd()">💾 Добавить в каталог</button>
+        <button class="btn btn-hide" onclick="toggleAddCard()">Отмена</button>
+      </div>
+    </div>
+
+    <div class="cat-grid" id="catGrid"></div>
+  </div>
+
 </div>
 
 <script>
@@ -189,9 +260,96 @@
 const ALL_SLOTS = {{ slots | tojson }};
 
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities'][i] === name));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'catalog') renderCatalog();
+}
+
+/* ---------- Посещаемость (Яндекс.Метрика) ---------- */
+async function loadTraffic() {
+  const box = document.getElementById('trafficBox');
+  try {
+    const r = await fetch('/admin/api/traffic');
+    const d = await r.json();
+    if (!d.ok) {
+      box.innerHTML = `<div class="traffic-note">⚠️ Не подключено: ${d.why || 'нет данных'}</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="stats-grid" style="margin-bottom:0">
+        <div class="stat-card"><b>${d.d1.visits}</b><span>визитов сегодня</span></div>
+        <div class="stat-card"><b>${d.d1.users}</b><span>посетителей сегодня</span></div>
+        <div class="stat-card"><b>${d.d7.visits}</b><span>визитов за 7 дней</span></div>
+        <div class="stat-card"><b>${d.d7.users}</b><span>посетителей за 7 дней</span></div>
+        <div class="stat-card"><b>${d.d30.visits}</b><span>визитов за 30 дней</span></div>
+        <div class="stat-card"><b>${d.d30.users}</b><span>посетителей за 30 дней</span></div>
+      </div>`;
+  } catch (e) {
+    box.innerHTML = '<div class="traffic-note">⚠️ Ошибка загрузки статистики</div>';
+  }
+}
+loadTraffic();
+
+/* ---------- Каталог (карточки как на сайте) ---------- */
+function renderCatalog() {
+  const grid = document.getElementById('catGrid');
+  const items = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.expired);
+  if (!items.length) {
+    grid.innerHTML = '<div class="cat-empty">В каталоге пока никого нет</div>';
+    return;
+  }
+  grid.innerHTML = items.map(s => {
+    const isPremium = s.slot <= 10;
+    return `
+    <div class="cat-card ${isPremium ? 'premium' : ''}">
+      <div class="cat-badge ${isPremium ? 'premium' : ''}">
+        <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
+        <span>${isPremium ? '$100/мес' : '$25/мес'}</span>
+      </div>
+      ${s.photo ? `<img class="cat-photo" src="${s.photo}" alt="" onerror="this.style.display='none'">` : ''}
+      <div class="cat-name">${s.name}</div>
+      <div class="cat-city">📍 ${s.city || ''}</div>
+      ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
+      ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
+      ${s.url ? `<div class="cat-url"><a href="${s.url}" target="_blank">🌐 ${s.url}</a></div>` : ''}
+      <div class="cat-actions">
+        <form method="post" action="/admin/slot/${s.slot}/delete" onsubmit="return confirm('Убрать из каталога?')">
+          <button class="btn btn-delete" type="submit">🗑 Убрать из каталога</button>
+        </form>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleAddCard() {
+  document.getElementById('addCard').classList.toggle('open');
+}
+
+async function submitAdd() {
+  const name = document.getElementById('addName').value.trim();
+  const city = document.getElementById('addCity').value.trim();
+  if (!name || !city) { alert('Заполните название и город'); return; }
+  const free = ALL_SLOTS.find(s => !s.name);
+  if (!free) { alert('Нет свободных мест из 100 — сначала освободите слот'); return; }
+
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/slot/' + free.slot;
+  const fields = {
+    name: name, city: city,
+    desc: document.getElementById('addDesc').value,
+    photo: document.getElementById('addPhoto').value,
+    url: document.getElementById('addUrl').value,
+    contacts: document.getElementById('addContacts').value
+  };
+  Object.entries(fields).forEach(([k, v]) => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
 }
 
 function filterCities(q) {

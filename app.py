@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 import firebase_admin
+import requests
 from firebase_admin import credentials, db
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
@@ -14,6 +15,12 @@ from flask_cors import CORS
 SLOT_COUNT = 100
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip() or secrets.token_hex(32)
+
+# Счётчик на сайте реально стоит: Яндекс.Метрика 109925310 в index.html.
+# Чтобы показать цифры в админке, нужен OAuth-токен в переменной YM_TOKEN на
+# Render. Без токена ничего не выдумываем — честно говорим, что не подключено.
+YM_COUNTER = os.environ.get("YM_COUNTER_ID", "109925310")
+_ym_cache = {"ts": 0, "data": None}
 
 _cred_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "").strip()
 _db_url = os.environ.get("FIREBASE_DB_URL", "").strip()
@@ -43,6 +50,34 @@ def _is_expired(rec):
     if not expires_at:
         return False
     return time.time() > expires_at
+
+def _ym(tok, date1, date2):
+    """Визиты и уникальные посетители за период (не суммируются по дням)."""
+    r = requests.get("https://api-metrika.yandex.net/stat/v1/data",
+                      params={"ids": YM_COUNTER, "metrics": "ym:s:visits,ym:s:users",
+                              "date1": date1, "date2": date2},
+                      headers={"Authorization": "OAuth " + tok}, timeout=10)
+    tot = (r.json().get("totals") or [0, 0])
+    return {"visits": int(tot[0]), "users": int(tot[1])}
+
+def _site_traffic():
+    tok = (os.environ.get("YM_TOKEN") or "").strip()
+    if not tok:
+        return {"ok": False, "counter": YM_COUNTER,
+                "why": "на сервере нет токена доступа к Метрике (переменная YM_TOKEN "
+                       "на Render не задана) — панель не может запросить цифры."}
+    if _ym_cache["data"] and time.time() - _ym_cache["ts"] < 600:
+        return _ym_cache["data"]
+    try:
+        out = {"ok": True, "counter": YM_COUNTER,
+               "d1": _ym(tok, "today", "today"),
+               "d7": _ym(tok, "7daysAgo", "today"),
+               "d30": _ym(tok, "30daysAgo", "today")}
+    except Exception as e:
+        out = {"ok": False, "counter": YM_COUNTER,
+               "why": "Метрика не ответила (%s) — проверь токен YM_TOKEN и права." % str(e)[:80]}
+    _ym_cache.update({"ts": time.time(), "data": out})
+    return out
 
 def _require_admin(fn):
     @wraps(fn)
@@ -209,6 +244,11 @@ def admin_slot_move(n):
         dst_ref.set(rec)
         src_ref.delete()
     return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/api/traffic")
+@_require_admin
+def admin_api_traffic():
+    return jsonify(_site_traffic())
 
 @app.route("/healthz")
 def healthz():
