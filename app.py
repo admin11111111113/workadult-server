@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""workadult.pro — админка для размещения студий. 100 мест, ручной CRUD через /admin."""
 import json
 import os
 import secrets
+import time
+from datetime import datetime, timedelta
 from functools import wraps
 
 import firebase_admin
@@ -28,16 +29,20 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 _LISTINGS_REF = "/workadult_studios"
 
-# Места 1-10 = $100/мес, 11-100 = $25/мес
 def _slot_price(n):
     return 100 if n <= 10 else 25
 
 PUBLIC_FIELDS = ("name", "city", "desc", "photo", "contacts", "url")
 
-
 def _slot_key(n):
     return f"slot_{int(n):03d}"
 
+def _is_expired(rec):
+    """Проверяет истёк ли срок размещения"""
+    expires_at = rec.get("expires_at")
+    if not expires_at:
+        return False
+    return time.time() > expires_at
 
 def _require_admin(fn):
     @wraps(fn)
@@ -47,7 +52,6 @@ def _require_admin(fn):
         return fn(*a, **kw)
     return wrapper
 
-
 # ─────────────────────────── публичный API ──────────────
 @app.route("/api/listings", methods=["GET"])
 def api_listings():
@@ -55,29 +59,40 @@ def api_listings():
     out = []
     for n in range(1, SLOT_COUNT + 1):
         rec = raw.get(_slot_key(n))
-        if not rec or rec.get("status") != "active":
+        # Скрываем если статус не active или срок истёк
+        if not rec or rec.get("status") != "active" or _is_expired(rec):
             out.append({"slot": n, "price": _slot_price(n), "listing": None})
             continue
-        out.append({"slot": n, "price": _slot_price(n),
-                    "listing": {k: rec.get(k, "") for k in PUBLIC_FIELDS}})
+        listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
+        listing["expires_at"] = rec.get("expires_at")
+        out.append({"slot": n, "price": _slot_price(n), "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
+@app.route("/api/featured", methods=["GET"])
+def api_featured():
+    """Только премиум студии (места 1-10) для ротации на главной"""
+    raw = db.reference(_LISTINGS_REF).get() or {}
+    featured = []
+    for n in range(1, 11):
+        rec = raw.get(_slot_key(n))
+        if rec and rec.get("status") == "active" and not _is_expired(rec):
+            listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
+            listing["slot"] = n
+            featured.append(listing)
+    return jsonify({"ok": True, "featured": featured})
 
 @app.route("/api/click/<int:n>", methods=["POST"])
 def api_click(n):
     if not (1 <= n <= SLOT_COUNT):
         return jsonify({"ok": False}), 400
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
-
     def txn(cur):
         if not cur or cur.get("status") != "active":
             return cur
         cur["clicks"] = int(cur.get("clicks", 0)) + 1
         return cur
-
     ref.transaction(txn)
     return jsonify({"ok": True})
-
 
 # ─────────────────────────────────── админка ────────────────────────────────
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -92,48 +107,75 @@ def admin_login():
         return redirect(url_for("admin_dashboard"))
     return render_template("login.html", error="Неверный пароль")
 
-
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
     session.pop("admin_ok", None)
     return redirect(url_for("admin_login"))
-
 
 @app.route("/admin", methods=["GET"])
 @_require_admin
 def admin_dashboard():
     raw = db.reference(_LISTINGS_REF).get() or {}
     slots = []
+    now = time.time()
     for n in range(1, SLOT_COUNT + 1):
         rec = raw.get(_slot_key(n)) or {}
-        slots.append({"slot": n, "price": _slot_price(n), **rec})
+        # Вычисляем дней осталось
+        expires_at = rec.get("expires_at")
+        days_left = None
+        expired = False
+        if expires_at:
+            diff = expires_at - now
+            if diff < 0:
+                expired = True
+                days_left = 0
+            else:
+                days_left = int(diff / 86400)
+        slots.append({"slot": n, "price": _slot_price(n), "days_left": days_left, "expired": expired, **rec})
     total_clicks = sum(int(s.get("clicks", 0)) for s in slots)
-    occupied = sum(1 for s in slots if s.get("status") == "active")
+    occupied = sum(1 for s in slots if s.get("status") == "active" and not s.get("expired"))
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT)
-
 
 @app.route("/admin/slot/<int:n>", methods=["POST"])
 @_require_admin
 def admin_slot_save(n):
     if not (1 <= n <= SLOT_COUNT):
         return redirect(url_for("admin_dashboard"))
+    
+    # Автоматически ставим срок 30 дней
+    expires_at = time.time() + (30 * 24 * 3600)
+    
     rec = {
-        "name":     request.form.get("name", "").strip()[:120],
-        "city":     request.form.get("city", "").strip()[:80],
-        "desc":     request.form.get("desc", "").strip()[:600],
-        "photo":    request.form.get("photo", "").strip()[:500],
-        "contacts": request.form.get("contacts", "").strip()[:200],
-        "url":      request.form.get("url", "").strip()[:300],
-        "status":   "active",
+        "name":       request.form.get("name", "").strip()[:120],
+        "city":       request.form.get("city", "").strip()[:80],
+        "desc":       request.form.get("desc", "").strip()[:600],
+        "photo":      request.form.get("photo", "").strip()[:500],
+        "contacts":   request.form.get("contacts", "").strip()[:200],
+        "url":        request.form.get("url", "").strip()[:300],
+        "status":     "active",
+        "expires_at": expires_at,
     }
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
     existing = ref.get() or {}
     rec["clicks"] = int(existing.get("clicks", 0))
+    # Если продлеваем — сохраняем старые клики
     ref.set(rec)
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/admin/slot/<int:n>/extend", methods=["POST"])
+@_require_admin
+def admin_slot_extend(n):
+    """Продлить на ещё 30 дней"""
+    ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
+    rec = ref.get()
+    if rec:
+        current = max(rec.get("expires_at", time.time()), time.time())
+        rec["expires_at"] = current + (30 * 24 * 3600)
+        rec["status"] = "active"
+        ref.set(rec)
+    return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>/hide", methods=["POST"])
 @_require_admin
@@ -145,13 +187,11 @@ def admin_slot_hide(n):
         ref.set(rec)
     return redirect(url_for("admin_dashboard"))
 
-
 @app.route("/admin/slot/<int:n>/delete", methods=["POST"])
 @_require_admin
 def admin_slot_delete(n):
     db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").delete()
     return redirect(url_for("admin_dashboard"))
-
 
 @app.route("/admin/slot/<int:n>/move", methods=["POST"])
 @_require_admin
@@ -170,11 +210,9 @@ def admin_slot_move(n):
         src_ref.delete()
     return redirect(url_for("admin_dashboard"))
 
-
 @app.route("/healthz")
 def healthz():
     return jsonify({"ok": True})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)

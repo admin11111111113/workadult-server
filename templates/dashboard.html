@@ -8,45 +8,51 @@
   * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px; }
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  h1 { font-size: 20px; margin: 0; }
-  .stats { display: flex; gap: 16px; margin-bottom: 20px; }
+  h1 { font-size: 18px; margin: 0; }
+  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
   .stat { background: #1a1d24; padding: 12px 20px; border-radius: 10px; }
   .stat b { display: block; font-size: 22px; }
   .stat span { font-size: 12px; color: #9aa0aa; }
-  form.logout { display: inline; }
-  button.small { background: #2a2e38; color: #e6e6e6; border: none; padding: 6px 12px;
-                 border-radius: 6px; cursor: pointer; font-size: 12px; }
+  button.small { background: #2a2e38; color: #e6e6e6; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   button.small:hover { background: #3a3f4c; }
   button.small.save { background: #1e4d2b; color: #6fdc8c; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid #262a33; text-align: left; vertical-align: top; }
+  button.small.extend { background: #1e3a5f; color: #4f7cff; }
+  button.small.danger { color: #dc6f6f; }
+  form.logout { display: inline; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid #262a33; text-align: left; vertical-align: top; }
   th { color: #9aa0aa; font-weight: 600; position: sticky; top: 0; background: #0f1115; }
   tr.empty td { color: #555; }
   tr.hidden-row { opacity: 0.45; }
-  input, textarea { width: 100%; padding: 6px 8px; border-radius: 5px; border: 1px solid #333;
-                     background: #0f1115; color: #fff; font-size: 12px; }
-  textarea { min-height: 40px; resize: vertical; }
-  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  tr.expired td { background: #2a1010; }
+  tr.premium { background: #14120a; }
+  input, textarea { width: 100%; padding: 5px 7px; border-radius: 5px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 11px; }
+  textarea { min-height: 36px; resize: vertical; }
+  .row-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
   .clicks { font-weight: 700; color: #4f7cff; }
   .move-form { display: flex; gap: 4px; align-items: center; }
-  .move-form input { width: 60px; }
+  .move-form input { width: 50px; }
   .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #2a2e38; }
   .badge.active { background: #1e4d2b; color: #6fdc8c; }
   .badge.hidden { background: #4d1e1e; color: #dc6f6f; }
+  .badge.expired { background: #4d2a1e; color: #f0a050; }
   .price-tag { font-size: 10px; color: #f0b429; font-weight: 700; }
-  .premium { background: #2a2010; }
+  .days-left { font-size: 10px; color: #9aa0aa; }
+  .days-left.warning { color: #f0b429; }
+  .days-left.danger { color: #dc6f6f; }
+  .premium-row { background: #14120a; }
 </style>
 </head>
 <body>
 <header>
-  <h1>workadult.pro — {{ occupied }}/{{ slot_count }} мест занято · {{ total_clicks }} кликов всего</h1>
+  <h1>workadult.pro — {{ occupied }}/{{ slot_count }} активных · {{ total_clicks }} кликов</h1>
   <form class="logout" method="post" action="/admin/logout">
     <button class="small" type="submit">Выйти</button>
   </form>
 </header>
 
 <div class="stats">
-  <div class="stat"><b>{{ occupied }}</b><span>занято мест</span></div>
+  <div class="stat"><b>{{ occupied }}</b><span>активных</span></div>
   <div class="stat"><b>{{ slot_count - occupied }}</b><span>свободно</span></div>
   <div class="stat"><b>{{ total_clicks }}</b><span>кликов всего</span></div>
 </div>
@@ -54,62 +60,84 @@
 <table>
   <thead>
     <tr>
-      <th style="width:36px">#</th>
-      <th style="width:50px">Цена</th>
+      <th>#</th>
+      <th>Цена</th>
       <th>Название</th>
       <th>Город</th>
       <th>Описание</th>
-      <th>Фото (URL)</th>
-      <th>Сайт (URL)</th>
+      <th>Фото</th>
+      <th>Сайт</th>
       <th>Контакты</th>
-      <th style="width:60px">Клики</th>
-      <th style="width:70px">Статус</th>
-      <th style="width:220px">Действия</th>
+      <th>Клики</th>
+      <th>Срок</th>
+      <th>Статус</th>
+      <th>Действия</th>
     </tr>
   </thead>
   <tbody>
     {% for s in slots %}
-    <tr class="{{ 'empty' if not s.get('name') else '' }} {{ 'hidden-row' if s.get('status') == 'hidden' else '' }} {{ 'premium' if s.slot <= 10 else '' }}">
+    {% set row_class = ('expired' if s.expired else '') + (' hidden-row' if s.get('status') == 'hidden' else '') + (' premium-row' if s.slot <= 10 else '') %}
+    <tr class="{{ row_class }}">
       <td>{{ s.slot }}</td>
       <td><span class="price-tag">${{ s.price }}</span></td>
       <form method="post" action="/admin/slot/{{ s.slot }}">
-        <td><input name="name" value="{{ s.get('name','') }}" placeholder="Название студии"></td>
-        <td><input name="city" value="{{ s.get('city','') }}" placeholder="Москва"></td>
+        <td><input name="name" value="{{ s.get('name','') }}" placeholder="Название"></td>
+        <td><input name="city" value="{{ s.get('city','') }}" placeholder="Город"></td>
         <td><textarea name="desc" placeholder="Описание">{{ s.get('desc','') }}</textarea></td>
         <td><input name="photo" value="{{ s.get('photo','') }}" placeholder="https://..."></td>
         <td><input name="url" value="{{ s.get('url','') }}" placeholder="https://..."></td>
-        <td><input name="contacts" value="{{ s.get('contacts','') }}" placeholder="Telegram, телефон"></td>
+        <td><input name="contacts" value="{{ s.get('contacts','') }}" placeholder="Telegram"></td>
         <td class="clicks">{{ s.get('clicks', 0) }}</td>
         <td>
+          {% if s.days_left is not none %}
+            {% if s.expired %}
+              <span class="days-left danger">Истёк</span>
+            {% elif s.days_left <= 3 %}
+              <span class="days-left warning">{{ s.days_left }} дн.</span>
+            {% else %}
+              <span class="days-left">{{ s.days_left }} дн.</span>
+            {% endif %}
+          {% else %}
+            <span class="days-left">—</span>
+          {% endif %}
+        </td>
+        <td>
           {% if s.get('name') %}
-            <span class="badge {{ s.get('status','active') }}">{{ 'скрыто' if s.get('status')=='hidden' else 'видно' }}</span>
+            {% if s.expired %}
+              <span class="badge expired">истёк</span>
+            {% else %}
+              <span class="badge {{ s.get('status','active') }}">{{ 'скрыто' if s.get('status')=='hidden' else 'видно' }}</span>
+            {% endif %}
           {% else %}
             <span class="badge">пусто</span>
           {% endif %}
         </td>
         <td>
           <div class="row-actions">
-            <button class="small save" type="submit">Сохранить</button>
+            <button class="small save" type="submit">Сохранить (+30д)</button>
           </div>
         </td>
       </form>
     </tr>
     {% if s.get('name') %}
-    <tr class="{{ 'hidden-row' if s.get('status') == 'hidden' else '' }}">
+    <tr class="{{ row_class }}">
       <td colspan="2"></td>
-      <td colspan="7"></td>
-      <td colspan="2">
+      <td colspan="9"></td>
+      <td>
         <div class="row-actions">
+          <form method="post" action="/admin/slot/{{ s.slot }}/extend">
+            <button class="small extend" type="submit">+30 дней</button>
+          </form>
           <form method="post" action="/admin/slot/{{ s.slot }}/hide">
             <button class="small" type="submit">{{ 'Показать' if s.get('status')=='hidden' else 'Скрыть' }}</button>
           </form>
           <form method="post" action="/admin/slot/{{ s.slot }}/delete"
-                onsubmit="return confirm('Удалить студию из места {{ s.slot }}?')">
-            <button class="small" type="submit" style="color:#dc6f6f">Удалить</button>
+                onsubmit="return confirm('Удалить место {{ s.slot }}?')">
+            <button class="small danger" type="submit">Удалить</button>
           </form>
           <form class="move-form" method="post" action="/admin/slot/{{ s.slot }}/move">
             <input name="target" type="number" min="1" max="{{ slot_count }}" placeholder="№">
-            <button class="small" type="submit">Перенести</button>
+            <button class="small" type="submit">↔</button>
           </form>
         </div>
       </td>
