@@ -117,6 +117,29 @@
   .fmt-chip { background: rgba(255,255,255,.05); border: 1px solid #333; color: #9aa0aa; border-radius: 8px; padding: 3px 9px; font-size: 11px; font-weight: 600; margin-right: 4px; display: inline-block; }
   .fmt-checks { display: flex; gap: 12px; flex-wrap: wrap; }
   .fmt-checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #ccc; }
+
+  /* Тарифные строки: золото/серебро/бронза/обычное */
+  .tier-row { display: flex; align-items: center; gap: 20px; padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #262a33; }
+  .tier-row label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa0aa; }
+  .tier-row input { width: 70px; padding: 6px 8px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 13px; }
+  .tier-label { font-weight: 700; font-size: 13px; min-width: 100px; }
+  .tier-row-gold { background: rgba(255,210,74,.06); border-color: rgba(255,210,74,.3); } .tier-row-gold .tier-label { color: #ffd24a; }
+  .tier-row-silver { background: rgba(200,200,210,.06); border-color: rgba(200,200,210,.3); } .tier-row-silver .tier-label { color: #d6d9e0; }
+  .tier-row-bronze { background: rgba(205,127,50,.06); border-color: rgba(205,127,50,.3); } .tier-row-bronze .tier-label { color: #cd8c4c; }
+  .tier-row-regular { background: rgba(255,255,255,.02); } .tier-row-regular .tier-label { color: #9aa0aa; }
+
+  /* Медаль-бейджи на карточках мест/каталога */
+  .badge-tier { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; letter-spacing: .3px; }
+  .badge-tier.gold { background: rgba(255,210,74,.16); color: #ffd24a; border: 1px solid rgba(255,210,74,.4); }
+  .badge-tier.silver { background: rgba(200,200,210,.16); color: #e2e5ea; border: 1px solid rgba(200,200,210,.4); }
+  .badge-tier.bronze { background: rgba(205,127,50,.16); color: #e0a06a; border: 1px solid rgba(205,127,50,.4); }
+  .badge-tier.regular { background: #2a2e38; color: #9aa0aa; border: 1px solid #333; }
+  .slot-card.tier-gold { border-color: rgba(255,210,74,.5); background: #14120a; }
+  .slot-card.tier-silver { border-color: rgba(200,200,210,.5); background: #131417; }
+  .slot-card.tier-bronze { border-color: rgba(205,127,50,.5); background: #14100a; }
+  .cat-card.tier-gold { border-color: rgba(255,210,74,.5); background: #14120a; }
+  .cat-card.tier-silver { border-color: rgba(200,200,210,.5); background: #131417; }
+  .cat-card.tier-bronze { border-color: rgba(205,127,50,.5); background: #14100a; }
 </style>
 </head>
 <body>
@@ -161,24 +184,32 @@
 
     <div class="city-stats" style="margin-bottom:32px">
       <h3>Тарифы на размещение (Каталог / По городам)</h3>
-      <form method="post" action="/admin/pricing/save" class="form-grid" style="max-width:560px">
-        <div class="form-group">
-          <label>Премиум-мест на город</label>
-          <input type="number" name="premium_per_city" value="{{ pricing.premium_per_city }}" min="0" max="{{ slot_count }}">
+      <form method="post" action="/admin/pricing/save">
+        <div class="tier-row tier-row-gold">
+          <span class="tier-label">🥇 Золото</span>
+          <label>мест на город <input type="number" name="gold_count" value="{{ pricing.gold_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="gold_price" value="{{ pricing.gold_price }}" min="0"> /мес</label>
         </div>
-        <div class="form-group">
-          <label>Цена премиум-места ($/мес)</label>
-          <input type="number" name="premium_price" value="{{ pricing.premium_price }}" min="0">
+        <div class="tier-row tier-row-silver">
+          <span class="tier-label">🥈 Серебро</span>
+          <label>мест на город <input type="number" name="silver_count" value="{{ pricing.silver_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="silver_price" value="{{ pricing.silver_price }}" min="0"> /мес</label>
         </div>
-        <div class="form-group">
-          <label>Цена обычного места ($/мес)</label>
-          <input type="number" name="regular_price" value="{{ pricing.regular_price }}" min="0">
+        <div class="tier-row tier-row-bronze">
+          <span class="tier-label">🥉 Бронза</span>
+          <label>мест на город <input type="number" name="bronze_count" value="{{ pricing.bronze_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="bronze_price" value="{{ pricing.bronze_price }}" min="0"> /мес</label>
         </div>
-        <div class="form-group full">
+        <div class="tier-row tier-row-regular">
+          <span class="tier-label">Обычное</span>
+          <label>без лимита мест · разовая оплата · навсегда</label>
+          <label>$ <input type="number" name="regular_price" value="{{ pricing.regular_price }}" min="0"> разово</label>
+        </div>
+        <div class="actions-row" style="margin-top:14px">
           <button class="btn btn-save" type="submit">💾 Сохранить тарифы</button>
         </div>
       </form>
-      <div class="traffic-note">Применяется к новым и пересохранённым местам. У уже занятых цена зафиксирована на момент размещения — нажми «Сохранить» на карточке места, чтобы пересчитать по новому тарифу.</div>
+      <div class="traffic-note">Применяется к новым и пересохранённым местам. У уже занятых уровень/цена зафиксированы на момент размещения — нажми «Сохранить» на карточке места, чтобы пересчитать по новому тарифу. Золото/серебро/бронза — помесячно (автопродление +30 дней), «Обычное» — разовая оплата, публикация навсегда.</div>
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
@@ -545,6 +576,14 @@
 // Данные слотов из сервера
 const ALL_SLOTS = {{ slots | tojson }};
 const PRICING = {{ pricing | tojson }};
+const TIER_LABEL = {gold: '🥇 Золото', silver: '🥈 Серебро', bronze: '🥉 Бронза', regular: 'Обычное'};
+
+function tierForRank(rank) {
+  if (rank <= PRICING.gold_count) return {tier: 'gold', price: PRICING.gold_price};
+  if (rank <= PRICING.gold_count + PRICING.silver_count) return {tier: 'silver', price: PRICING.silver_price};
+  if (rank <= PRICING.gold_count + PRICING.silver_count + PRICING.bronze_count) return {tier: 'bronze', price: PRICING.bronze_price};
+  return {tier: 'regular', price: PRICING.regular_price};
+}
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies','studii'][i] === name));
@@ -593,13 +632,14 @@ function renderCatalog() {
   grid.innerHTML = cities.map(city => {
     const list = byCity[city].slice().sort((a, b) => (b.price || 0) - (a.price || 0));
     const cards = list.map(s => {
-      const isPremium = !!s.premium;
-      const price = s.price != null ? s.price : (isPremium ? PRICING.premium_price : PRICING.regular_price);
+      const tier = s.tier || 'regular';
+      const price = s.price != null ? s.price : PRICING.regular_price;
+      const perm = tier === 'regular';
       return `
-      <div class="cat-card ${isPremium ? 'premium' : ''}">
-        <div class="cat-badge ${isPremium ? 'premium' : ''}">
-          <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
-          <span>$${price}/мес</span>
+      <div class="cat-card ${tier !== 'regular' ? 'tier-' + tier : ''}">
+        <div class="cat-badge">
+          <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
+          <span>$${price}${perm ? ' разово · навсегда' : '/мес'}</span>
         </div>
         ${s.photo ? `<img class="cat-photo" src="${s.photo}" alt="" onerror="this.style.display='none'">` : ''}
         <div class="cat-name">${s.name}</div>
@@ -727,12 +767,14 @@ function showCity(city) {
   document.querySelectorAll('.city-btn').forEach(b => b.classList.toggle('active', b.dataset.city === city));
   document.getElementById('cityTitle').textContent = city;
 
-  // Топ-N мест в городе — премиум (см. тарифы в «Обзоре»), остальные обычные.
-  // Занятые этим городом + свободные места (добавляем из общего пула до 10 карточек на просмотр).
+  // Золото/серебро/бронза — топ-N мест в городе (см. тарифы в «Обзоре»), остальные обычные.
+  // Занятые этим городом + свободные места (добавляем из общего пула до 15 карточек на просмотр).
   const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active');
-  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, 10 - citySlots.length);
+  const previewCount = PRICING.gold_count + PRICING.silver_count + PRICING.bronze_count + 5;
+  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, Math.max(0, previewCount - citySlots.length));
 
-  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято · премиум-мест в городе: ' + PRICING.premium_per_city;
+  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято · золото '
+    + PRICING.gold_count + ' · серебро ' + PRICING.silver_count + ' · бронза ' + PRICING.bronze_count + ' на город';
   document.getElementById('slotsPanel').classList.add('active');
 
   const grid = document.getElementById('slotsGrid');
@@ -747,14 +789,14 @@ function showCity(city) {
 function renderSlot(grid, s, localNum, city) {
   const isOccupied = s.name && s.status === 'active';
   const isExpired = s.expired;
-  // У занятого места цена/премиум зафиксированы при размещении; у пустого —
+  // У занятого места уровень/цена зафиксированы при размещении; у пустого —
   // показываем, чем оно станет, если занять его следующим в этом городе.
-  const isPremium = isOccupied ? !!s.premium : localNum <= PRICING.premium_per_city;
-  const price = isOccupied ? (s.price != null ? s.price : (isPremium ? PRICING.premium_price : PRICING.regular_price))
-                            : (isPremium ? PRICING.premium_price : PRICING.regular_price);
+  const tier = isOccupied ? (s.tier || 'regular') : tierForRank(localNum).tier;
+  const price = isOccupied ? (s.price != null ? s.price : PRICING.regular_price) : tierForRank(localNum).price;
+  const perm = tier === 'regular';
 
   let cardClass = 'slot-card';
-  if (isPremium) cardClass += ' premium';
+  if (tier !== 'regular') cardClass += ' tier-' + tier;
   if (isOccupied && !isExpired) cardClass += ' occupied';
   if (isExpired) cardClass += ' expired-card';
 
@@ -765,7 +807,9 @@ function renderSlot(grid, s, localNum, city) {
   else badgeHtml = '<span class="badge active">активно</span>';
 
   let daysHtml = '';
-  if (s.days_left !== null && s.days_left !== undefined) {
+  if (isOccupied && perm) {
+    daysHtml = '<span class="days">♾ навсегда</span>';
+  } else if (s.days_left !== null && s.days_left !== undefined) {
     const cls = s.days_left <= 0 ? 'danger' : s.days_left <= 3 ? 'warn' : '';
     daysHtml = `<span class="days ${cls}">${s.days_left > 0 ? s.days_left + ' дн.' : 'истёк'}</span>`;
   }
@@ -776,8 +820,8 @@ function renderSlot(grid, s, localNum, city) {
     <div class="${cardClass}">
       <div class="slot-header" onclick="toggleSlot('${slotId}')">
         <div>
-          <span class="slot-num ${isPremium ? 'premium' : ''}">
-            ${isPremium ? '⭐' : '○'} Место #${localNum} (глоб. #${s.slot}) · $${price}/мес
+          <span class="slot-num">
+            <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span> Место #${localNum} (глоб. #${s.slot}) · $${price}${perm ? ' разово' : '/мес'}
           </span>
           ${s.name ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${s.name}</div>` : ''}
         </div>
@@ -816,14 +860,16 @@ function renderSlot(grid, s, localNum, city) {
             </div>
           </div>
           <div class="actions-row">
-            <button class="btn btn-save" type="submit">💾 Сохранить (+30 дней)</button>
+            <button class="btn btn-save" type="submit">💾 Сохранить${perm ? '' : ' (+30 дней)'}</button>
           </div>
         </form>
         ${s.name ? `
         <div class="actions-row">
+          ${!perm ? `
           <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
             <button class="btn btn-extend" type="submit">🔄 +30 дней</button>
           </form>
+          ` : ''}
           <form method="post" action="/admin/slot/${s.slot}/hide" style="display:inline">
             <button class="btn btn-hide" type="submit">${s.status === 'hidden' ? '👁 Показать' : '🙈 Скрыть'}</button>
           </form>

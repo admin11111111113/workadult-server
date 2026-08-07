@@ -24,10 +24,18 @@
   .card:hover { border-color: #e91e8c; transform: translateY(-2px); }
   .card.empty { opacity: 0.35; cursor: default; border-style: dashed; }
   .card.empty:hover { border-color: #1e1e2e; transform: none; }
-  .card.premium { border-color: #3a2a10; background: #14120a; }
-  .card.premium:hover { border-color: #f0b429; }
+  .card.tier-gold { border-color: rgba(255,210,74,.5); background: #14120a; }
+  .card.tier-gold:hover { border-color: #ffd24a; }
+  .card.tier-silver { border-color: rgba(200,200,210,.5); background: #131417; }
+  .card.tier-silver:hover { border-color: #d6d9e0; }
+  .card.tier-bronze { border-color: rgba(205,127,50,.5); background: #14100a; }
+  .card.tier-bronze:hover { border-color: #cd8c4c; }
   .slot-badge { font-size: 10px; color: #555; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-  .slot-badge.premium { color: #f0b429; }
+  .badge-tier { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
+  .badge-tier.gold { background: rgba(255,210,74,.16); color: #ffd24a; border: 1px solid rgba(255,210,74,.4); }
+  .badge-tier.silver { background: rgba(200,200,210,.16); color: #e2e5ea; border: 1px solid rgba(200,200,210,.4); }
+  .badge-tier.bronze { background: rgba(205,127,50,.16); color: #e0a06a; border: 1px solid rgba(205,127,50,.4); }
+  .badge-tier.regular { background: #1e1e2e; color: #9aa0aa; border: 1px solid #2a2a3a; }
   .price-tag { font-size: 11px; font-weight: 700; }
   .card-photo { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; }
   .card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
@@ -55,7 +63,7 @@
 <div class="container">
   <div class="hero">
     <h1>Каталог вебкам студий</h1>
-    <p>Проверенные студии по всей России и СНГ. Места 1–10 в каждом городе — премиум размещение.</p>
+    <p>Проверенные студии по всей России и СНГ. 🥇 Золото / 🥈 Серебро / 🥉 Бронза — топ мест в каждом городе, помесячное размещение. Остальные — разовая оплата, публикация навсегда.</p>
   </div>
 
   <div class="stats" id="stats" style="display:none">
@@ -91,22 +99,24 @@ async function load() {
       return;
     }
 
+    const TIER_LABEL = {gold: '🥇 Золото', silver: '🥈 Серебро', bronze: '🥉 Бронза', regular: 'Обычное'};
     slots.forEach(s => {
-      const isPremium = s.listing ? !!s.listing.premium : false;
+      const tier = s.listing ? (s.listing.tier || 'regular') : null;
       const card = document.createElement('div');
-      card.className = 'card' + (s.listing ? (isPremium ? ' premium' : '') : ' empty');
+      card.className = 'card' + (s.listing ? (tier !== 'regular' ? ' tier-' + tier : '') : ' empty');
 
       if (s.listing) {
         const l = s.listing;
+        const perm = tier === 'regular';
         card.onclick = () => {
           fetch(API + '/api/click/' + s.slot, {method: 'POST'});
           if (l.url) window.open(l.url, '_blank');
           else if (l.contacts) alert('Контакты: ' + l.contacts);
         };
         card.innerHTML = `
-          <div class="slot-badge ${isPremium ? 'premium' : ''}">
-            <span>${isPremium ? '⭐ Премиум место — ' + l.city : 'Место — ' + l.city}</span>
-            <span class="price-tag">$${s.price}/мес</span>
+          <div class="slot-badge">
+            <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
+            <span class="price-tag">$${s.price}${perm ? ' разово' : '/мес'}</span>
           </div>
           ${l.photo ? `<img class="card-photo" src="${l.photo}" alt="${l.name}" onerror="this.style.display='none'">` : ''}
           <div class="card-name">${l.name}</div>
@@ -119,7 +129,7 @@ async function load() {
         card.innerHTML = `
           <div class="slot-badge">
             <span>Свободное место</span>
-            <span class="price-tag">от $${s.price}/мес</span>
+            <span class="price-tag">от $${s.price}</span>
           </div>
           <div class="empty-label">Место свободно</div>
           <div style="text-align:center;margin-top:8px">

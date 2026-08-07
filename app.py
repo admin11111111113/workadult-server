@@ -47,7 +47,16 @@ CATALOG_FMT_LABELS = {"studio": "В студии", "home": "Из дома", "pai
 
 # Тарифы задаются в админке (вкладка «Обзор») и хранятся в Firebase — эти
 # значения только запасной вариант, если настройки ещё не сохранялись.
-PRICING_DEFAULTS = {"premium_price": 100, "regular_price": 25, "premium_per_city": 5}
+# Три платных уровня в каждом городе (помесячно, автопродление +30 дней) +
+# «обычное» объявление — разовая оплата, публикация навсегда (без expires_at).
+PRICING_DEFAULTS = {
+    "gold_count": 5, "gold_price": 100,
+    "silver_count": 5, "silver_price": 50,
+    "bronze_count": 5, "bronze_price": 25,
+    "regular_price": 70,
+}
+TIER_ORDER = ("gold", "silver", "bronze", "regular")
+TIER_LABELS = {"gold": "🥇 Золото", "silver": "🥈 Серебро", "bronze": "🥉 Бронза", "regular": "Обычное"}
 
 def _get_pricing():
     raw = db.reference(_PRICING_REF).get() or {}
@@ -59,13 +68,23 @@ def _get_pricing():
             pass
     return out
 
+def _tier_for_rank(rank, pricing):
+    """По месту в очереди города определяет уровень и цену."""
+    if rank <= pricing["gold_count"]:
+        return "gold", pricing["gold_price"]
+    if rank <= pricing["gold_count"] + pricing["silver_count"]:
+        return "silver", pricing["silver_price"]
+    if rank <= pricing["gold_count"] + pricing["silver_count"] + pricing["bronze_count"]:
+        return "bronze", pricing["bronze_price"]
+    return "regular", pricing["regular_price"]
+
 PUBLIC_FIELDS = ("name", "city", "desc", "photo", "contacts", "url")
 
 def _slot_key(n):
     return f"slot_{int(n):03d}"
 
 def _is_expired(rec):
-    """Проверяет истёк ли срок размещения"""
+    """Проверяет истёк ли срок размещения. У «обычных» (навсегда) expires_at нет."""
     expires_at = rec.get("expires_at")
     if not expires_at:
         return False
@@ -134,10 +153,10 @@ def api_listings():
         # цена фиксируется в момент размещения (см. admin_slot_save) — так
         # смена тарифа в админке не задним числом меняет уже купленные места
         price = rec.get("price", pricing["regular_price"])
-        premium = rec.get("premium", False)
         listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
         listing["expires_at"] = rec.get("expires_at")
-        listing["premium"] = premium
+        listing["premium"] = rec.get("premium", False)
+        listing["tier"] = rec.get("tier", "regular")
         out.append({"slot": n, "price": price, "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
@@ -151,6 +170,7 @@ def api_featured():
         if rec and rec.get("status") == "active" and not _is_expired(rec) and rec.get("premium"):
             listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
             listing["slot"] = n
+            listing["tier"] = rec.get("tier", "regular")
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
@@ -238,7 +258,7 @@ def admin_dashboard():
                 days_left = 0
             else:
                 days_left = int(diff / 86400)
-        slot = {"slot": n, "price": pricing["regular_price"], "premium": False,
+        slot = {"slot": n, "price": pricing["regular_price"], "premium": False, "tier": "regular",
                "days_left": days_left, "expired": expired, **rec}
         slots.append(slot)
     total_clicks = sum(int(s.get("clicks", 0)) for s in slots)
@@ -265,7 +285,8 @@ def admin_dashboard():
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
                            catalog_studios=catalog_studios, catalog_formats=CATALOG_FORMATS,
-                           catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing)
+                           catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
+                           tier_labels=TIER_LABELS)
 
 @app.route("/admin/pricing/save", methods=["POST"])
 @_require_admin
@@ -285,18 +306,19 @@ def admin_slot_save(n):
     if not (1 <= n <= SLOT_COUNT):
         return redirect(url_for("admin_dashboard"))
 
-    # Автоматически ставим срок 30 дней
-    expires_at = time.time() + (30 * 24 * 3600)
     city = request.form.get("city", "").strip()[:80]
 
-    # Цена/премиум считаются по месту В ГОРОДЕ: топ-N уже занятых мест в этом
-    # городе (N и цены — из тарифов в админке) идут по премиум-цене, остальные
-    # по обычной. Считаем на момент сохранения — так правки тарифов в
-    # настройках применяются к новым и пересохранённым местам.
+    # Уровень/цена считаются по месту В ГОРОДЕ: топ-N золото, следующие N
+    # серебро, следующие N бронза (N и цены — из тарифов в админке), остальные
+    # «обычные». Считаем на момент сохранения — так правки тарифов применяются
+    # к новым и пересохранённым местам.
     raw = db.reference(_LISTINGS_REF).get() or {}
     pricing = _get_pricing()
     rank = _city_occupied_count(raw, city, exclude_slot=n) + 1
-    premium = rank <= pricing["premium_per_city"]
+    tier, price = _tier_for_rank(rank, pricing)
+    # Золото/серебро/бронза — помесячная оплата (автопродление +30 дней).
+    # «Обычное» — разовая оплата, публикация навсегда (без expires_at).
+    expires_at = None if tier == "regular" else time.time() + (30 * 24 * 3600)
 
     rec = {
         "name":       request.form.get("name", "").strip()[:120],
@@ -307,8 +329,9 @@ def admin_slot_save(n):
         "url":        request.form.get("url", "").strip()[:300],
         "status":     "active",
         "expires_at": expires_at,
-        "premium":    premium,
-        "price":      pricing["premium_price"] if premium else pricing["regular_price"],
+        "tier":       tier,
+        "premium":    tier != "regular",
+        "price":      price,
     }
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
     existing = raw.get(_slot_key(n)) or {}
@@ -320,10 +343,10 @@ def admin_slot_save(n):
 @app.route("/admin/slot/<int:n>/extend", methods=["POST"])
 @_require_admin
 def admin_slot_extend(n):
-    """Продлить на ещё 30 дней"""
+    """Продлить на ещё 30 дней (только платные уровни — «обычное» и так навсегда)"""
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
     rec = ref.get()
-    if rec:
+    if rec and rec.get("tier") != "regular":
         current = max(rec.get("expires_at", time.time()), time.time())
         rec["expires_at"] = current + (30 * 24 * 3600)
         rec["status"] = "active"
