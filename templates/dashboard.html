@@ -6,145 +6,316 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px; }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  h1 { font-size: 18px; margin: 0; }
-  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-  .stat { background: #1a1d24; padding: 12px 20px; border-radius: 10px; }
-  .stat b { display: block; font-size: 22px; }
-  .stat span { font-size: 12px; color: #9aa0aa; }
-  button.small { background: #2a2e38; color: #e6e6e6; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-  button.small:hover { background: #3a3f4c; }
-  button.small.save { background: #1e4d2b; color: #6fdc8c; }
-  button.small.extend { background: #1e3a5f; color: #4f7cff; }
-  button.small.danger { color: #dc6f6f; }
-  form.logout { display: inline; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { padding: 6px 8px; border-bottom: 1px solid #262a33; text-align: left; vertical-align: top; }
-  th { color: #9aa0aa; font-weight: 600; position: sticky; top: 0; background: #0f1115; }
-  tr.empty td { color: #555; }
-  tr.hidden-row { opacity: 0.45; }
-  tr.expired td { background: #2a1010; }
-  tr.premium { background: #14120a; }
-  input, textarea { width: 100%; padding: 5px 7px; border-radius: 5px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 11px; }
-  textarea { min-height: 36px; resize: vertical; }
-  .row-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-  .clicks { font-weight: 700; color: #4f7cff; }
-  .move-form { display: flex; gap: 4px; align-items: center; }
-  .move-form input { width: 50px; }
-  .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #2a2e38; }
+  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; }
+  .topbar { background: #1a1d24; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #262a33; }
+  .topbar h1 { margin: 0; font-size: 16px; color: #e91e8c; }
+  .tabs { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid #262a33; }
+  .tab { padding: 10px 20px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; color: #9aa0aa; background: #1a1d24; border: 1px solid #262a33; border-bottom: none; }
+  .tab.active { background: #0f1115; color: #fff; border-color: #262a33; }
+  .content { padding: 24px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Обзор */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card { background: #1a1d24; border-radius: 12px; padding: 20px; border: 1px solid #262a33; }
+  .stat-card b { display: block; font-size: 28px; color: #e91e8c; }
+  .stat-card span { font-size: 12px; color: #9aa0aa; }
+  .city-stats { background: #1a1d24; border-radius: 12px; padding: 20px; }
+  .city-stats h3 { margin: 0 0 16px; font-size: 14px; color: #9aa0aa; }
+  .city-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #262a33; font-size: 13px; }
+  .city-row:last-child { border-bottom: none; }
+  .city-row .bar { height: 4px; background: #e91e8c; border-radius: 2px; margin-top: 4px; }
+
+  /* Города */
+  .search-box { position: relative; margin-bottom: 20px; }
+  .search-box input { width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid #333; background: #1a1d24; color: #fff; font-size: 14px; }
+  .city-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 24px; }
+  .city-btn { padding: 8px 12px; border-radius: 8px; border: 1px solid #262a33; background: #1a1d24; color: #9aa0aa; cursor: pointer; font-size: 12px; text-align: center; transition: all 0.15s; }
+  .city-btn:hover { border-color: #e91e8c; color: #fff; }
+  .city-btn.active { background: #e91e8c; color: #fff; border-color: #e91e8c; }
+  .city-btn .count { font-size: 10px; opacity: 0.7; }
+  .slots-panel { display: none; }
+  .slots-panel.active { display: block; }
+  .slots-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .slots-grid { display: flex; flex-direction: column; gap: 12px; }
+  .slot-card { background: #1a1d24; border-radius: 12px; border: 1px solid #262a33; overflow: hidden; }
+  .slot-card.premium { border-color: #3a2a10; background: #14120a; }
+  .slot-card.occupied { border-color: #1e4d2b; }
+  .slot-card.expired-card { border-color: #4d2a1e; }
+  .slot-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; }
+  .slot-header:hover { background: rgba(255,255,255,0.03); }
+  .slot-num { font-size: 13px; font-weight: 700; }
+  .slot-num.premium { color: #f0b429; }
+  .slot-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; }
   .badge.active { background: #1e4d2b; color: #6fdc8c; }
+  .badge.empty { background: #2a2e38; color: #9aa0aa; }
   .badge.hidden { background: #4d1e1e; color: #dc6f6f; }
   .badge.expired { background: #4d2a1e; color: #f0a050; }
-  .price-tag { font-size: 10px; color: #f0b429; font-weight: 700; }
-  .days-left { font-size: 10px; color: #9aa0aa; }
-  .days-left.warning { color: #f0b429; }
-  .days-left.danger { color: #dc6f6f; }
-  .premium-row { background: #14120a; }
+  .days { font-size: 11px; color: #9aa0aa; }
+  .days.warn { color: #f0b429; }
+  .days.danger { color: #dc6f6f; }
+  .slot-body { display: none; padding: 16px; border-top: 1px solid #262a33; }
+  .slot-body.open { display: block; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 11px; color: #9aa0aa; }
+  .form-group input, .form-group textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 13px; width: 100%; }
+  .form-group textarea { min-height: 60px; resize: vertical; }
+  .form-group.full { grid-column: 1 / -1; }
+  .actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .btn-save { background: #1e4d2b; color: #6fdc8c; }
+  .btn-extend { background: #1e3a5f; color: #4f7cff; }
+  .btn-hide { background: #2a2e38; color: #e6e6e6; }
+  .btn-delete { background: #2a1010; color: #dc6f6f; }
+  .btn-move { background: #2a2e38; color: #e6e6e6; display: flex; gap: 6px; align-items: center; }
+  .btn-move input { width: 50px; padding: 4px 8px; border-radius: 4px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 12px; }
+  button.small { background: #2a2e38; color: #e6e6e6; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>workadult.pro — {{ occupied }}/{{ slot_count }} активных · {{ total_clicks }} кликов</h1>
-  <form class="logout" method="post" action="/admin/logout">
+
+<div class="topbar">
+  <h1>workadult.pro — админка</h1>
+  <form method="post" action="/admin/logout">
     <button class="small" type="submit">Выйти</button>
   </form>
-</header>
-
-<div class="stats">
-  <div class="stat"><b>{{ occupied }}</b><span>активных</span></div>
-  <div class="stat"><b>{{ slot_count - occupied }}</b><span>свободно</span></div>
-  <div class="stat"><b>{{ total_clicks }}</b><span>кликов всего</span></div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Цена</th>
-      <th>Название</th>
-      <th>Город</th>
-      <th>Описание</th>
-      <th>Фото</th>
-      <th>Сайт</th>
-      <th>Контакты</th>
-      <th>Клики</th>
-      <th>Срок</th>
-      <th>Статус</th>
-      <th>Действия</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for s in slots %}
-    {% set row_class = ('expired' if s.expired else '') + (' hidden-row' if s.get('status') == 'hidden' else '') + (' premium-row' if s.slot <= 10 else '') %}
-    <tr class="{{ row_class }}">
-      <td>{{ s.slot }}</td>
-      <td><span class="price-tag">${{ s.price }}</span></td>
-      <form method="post" action="/admin/slot/{{ s.slot }}">
-        <td><input name="name" value="{{ s.get('name','') }}" placeholder="Название"></td>
-        <td><input name="city" value="{{ s.get('city','') }}" placeholder="Город"></td>
-        <td><textarea name="desc" placeholder="Описание">{{ s.get('desc','') }}</textarea></td>
-        <td><input name="photo" value="{{ s.get('photo','') }}" placeholder="https://..."></td>
-        <td><input name="url" value="{{ s.get('url','') }}" placeholder="https://..."></td>
-        <td><input name="contacts" value="{{ s.get('contacts','') }}" placeholder="Telegram"></td>
-        <td class="clicks">{{ s.get('clicks', 0) }}</td>
-        <td>
-          {% if s.days_left is not none %}
-            {% if s.expired %}
-              <span class="days-left danger">Истёк</span>
-            {% elif s.days_left <= 3 %}
-              <span class="days-left warning">{{ s.days_left }} дн.</span>
-            {% else %}
-              <span class="days-left">{{ s.days_left }} дн.</span>
-            {% endif %}
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">📊 Обзор</div>
+  <div class="tab" onclick="showTab('cities')">🏙️ По городам</div>
+</div>
+
+<div class="content">
+
+  <!-- ОБЗОР -->
+  <div class="panel active" id="tab-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <b>{{ occupied }}</b>
+        <span>активных студий</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ slot_count - occupied }}</b>
+        <span>мест свободно</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ total_clicks }}</b>
+        <span>кликов всего</span>
+      </div>
+      <div class="stat-card">
+        <b>${{ occupied * 0 }}</b>
+        <span>доход/мес (примерно)</span>
+      </div>
+    </div>
+
+    <div class="city-stats">
+      <h3>Активные студии по городам</h3>
+      {% set city_counts = {} %}
+      {% for s in slots %}
+        {% if s.get('status') == 'active' and s.get('name') and not s.expired %}
+          {% set city = s.get('city', 'Неизвестно') %}
+          {% if city in city_counts %}
+            {% set _ = city_counts.update({city: city_counts[city] + 1}) %}
           {% else %}
-            <span class="days-left">—</span>
+            {% set _ = city_counts.update({city: 1}) %}
           {% endif %}
-        </td>
-        <td>
-          {% if s.get('name') %}
-            {% if s.expired %}
-              <span class="badge expired">истёк</span>
-            {% else %}
-              <span class="badge {{ s.get('status','active') }}">{{ 'скрыто' if s.get('status')=='hidden' else 'видно' }}</span>
-            {% endif %}
-          {% else %}
-            <span class="badge">пусто</span>
-          {% endif %}
-        </td>
-        <td>
-          <div class="row-actions">
-            <button class="small save" type="submit">Сохранить (+30д)</button>
+        {% endif %}
+      {% endfor %}
+      {% if city_counts %}
+        {% for city, count in city_counts.items() %}
+        <div class="city-row">
+          <span>{{ city }}</span>
+          <span style="color:#e91e8c;font-weight:700">{{ count }} студ.</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="color:#555;text-align:center;padding:20px">Нет активных студий</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ПО ГОРОДАМ -->
+  <div class="panel" id="tab-cities">
+    <div class="search-box">
+      <input type="text" id="citySearch" placeholder="🔍 Поиск города..." oninput="filterCities(this.value)">
+    </div>
+
+    <div class="city-grid" id="cityGrid">
+      {% set cities = [
+        'Москва','Санкт-Петербург','Новосибирск','Екатеринбург','Казань',
+        'Нижний Новгород','Челябинск','Красноярск','Самара','Уфа',
+        'Ростов-на-Дону','Краснодар','Омск','Воронеж','Пермь','Волгоград',
+        'Саратов','Тюмень','Барнаул','Ижевск','Калининград','Кемерово',
+        'Томск','Сочи','Иркутск','Анапа','Белгород','Бийск','Владивосток',
+        'Владимир','Вологда','Дзержинск','Евпатория','Иваново','Йошкар-Ола',
+        'Калуга','Киров','Курск','Липецк','Набережные Челны','Нальчик',
+        'Нижневартовск','Нижнекамск','Нижний Тагил','Новокузнецк','Новороссийск',
+        'Оренбург','Пенза','Псков','Севастополь','Симферополь','Ставрополь',
+        'Стерлитамак','Сургут','Таганрог','Тамбов','Тверь','Тольятти','Тула',
+        'Ульяновск','Чайковский','Чебоксары','Чита','Энгельс','Ярославль',
+        'Беларусь','Украина','Казахстан','Кыргызстан','Молдова'
+      ] %}
+      {% for city in cities %}
+      {% set city_occupied = [] %}
+      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and not s.expired %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
+      <div class="city-btn {% if city_occupied|length > 0 %}{% endif %}" 
+           onclick="showCity('{{ city }}')" 
+           data-city="{{ city }}">
+        {{ city }}
+        {% if city_occupied|length > 0 %}
+        <div class="count">{{ city_occupied|length }} студ.</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="slots-panel" id="slotsPanel">
+      <div class="slots-title">
+        <span id="cityTitle">Выберите город</span>
+        <span style="font-size:13px;color:#9aa0aa" id="citySubtitle"></span>
+      </div>
+      <div class="slots-grid" id="slotsGrid"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Данные слотов из сервера
+const ALL_SLOTS = {{ slots | tojson }};
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function filterCities(q) {
+  document.querySelectorAll('.city-btn').forEach(btn => {
+    btn.style.display = btn.dataset.city.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+function showCity(city) {
+  document.querySelectorAll('.city-btn').forEach(b => b.classList.toggle('active', b.dataset.city === city));
+  document.getElementById('cityTitle').textContent = city;
+  
+  // Найти слоты для этого города (или пустые для заполнения)
+  // Логика: показываем 10 слотов для города
+  // Занятые этим городом + свободные места
+  const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active');
+  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, 10 - citySlots.length);
+  
+  document.getElementById('citySubtitle').textContent = citySlots.length + ' из 10 мест занято';
+  document.getElementById('slotsPanel').classList.add('active');
+  
+  const grid = document.getElementById('slotsGrid');
+  grid.innerHTML = '';
+  
+  // Показываем занятые слоты этого города
+  citySlots.forEach((s, i) => renderSlot(grid, s, i + 1, city));
+  // Добавляем свободные места
+  freeSlots.forEach((s, i) => renderSlot(grid, s, citySlots.length + i + 1, city));
+}
+
+function renderSlot(grid, s, localNum, city) {
+  const isPremium = localNum <= 10;
+  const isOccupied = s.name && s.status === 'active';
+  const isExpired = s.expired;
+  
+  let cardClass = 'slot-card';
+  if (isPremium) cardClass += ' premium';
+  if (isOccupied && !isExpired) cardClass += ' occupied';
+  if (isExpired) cardClass += ' expired-card';
+  
+  let badgeHtml = '';
+  if (!s.name) badgeHtml = '<span class="badge empty">пусто</span>';
+  else if (isExpired) badgeHtml = '<span class="badge expired">истёк</span>';
+  else if (s.status === 'hidden') badgeHtml = '<span class="badge hidden">скрыто</span>';
+  else badgeHtml = '<span class="badge active">активно</span>';
+  
+  let daysHtml = '';
+  if (s.days_left !== null && s.days_left !== undefined) {
+    const cls = s.days_left <= 0 ? 'danger' : s.days_left <= 3 ? 'warn' : '';
+    daysHtml = `<span class="days ${cls}">${s.days_left > 0 ? s.days_left + ' дн.' : 'истёк'}</span>`;
+  }
+
+  const slotId = 'slot-' + s.slot;
+  
+  grid.innerHTML += `
+    <div class="${cardClass}">
+      <div class="slot-header" onclick="toggleSlot('${slotId}')">
+        <div>
+          <span class="slot-num ${isPremium ? 'premium' : ''}">
+            ${isPremium ? '⭐' : '○'} Место #${localNum} (глоб. #${s.slot}) · ${isPremium ? '$100' : '$25'}/мес
+          </span>
+          ${s.name ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${s.name}</div>` : ''}
+        </div>
+        <div class="slot-meta">
+          ${daysHtml}
+          ${badgeHtml}
+          <span style="color:#555">▾</span>
+        </div>
+      </div>
+      <div class="slot-body" id="${slotId}">
+        <form method="post" action="/admin/slot/${s.slot}">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Название студии</label>
+              <input name="name" value="${s.name || ''}" placeholder="Название">
+            </div>
+            <div class="form-group">
+              <label>Город</label>
+              <input name="city" value="${city}" readonly style="opacity:0.6">
+            </div>
+            <div class="form-group full">
+              <label>Описание</label>
+              <textarea name="desc" placeholder="Описание студии">${s.desc || ''}</textarea>
+            </div>
+            <div class="form-group">
+              <label>Фото (URL)</label>
+              <input name="photo" value="${s.photo || ''}" placeholder="https://...">
+            </div>
+            <div class="form-group">
+              <label>Сайт (URL)</label>
+              <input name="url" value="${s.url || ''}" placeholder="https://...">
+            </div>
+            <div class="form-group full">
+              <label>Контакты (Telegram, телефон)</label>
+              <input name="contacts" value="${s.contacts || ''}" placeholder="@studio или +7...">
+            </div>
           </div>
-        </td>
-      </form>
-    </tr>
-    {% if s.get('name') %}
-    <tr class="{{ row_class }}">
-      <td colspan="2"></td>
-      <td colspan="9"></td>
-      <td>
-        <div class="row-actions">
-          <form method="post" action="/admin/slot/{{ s.slot }}/extend">
-            <button class="small extend" type="submit">+30 дней</button>
+          <div class="actions-row">
+            <button class="btn btn-save" type="submit">💾 Сохранить (+30 дней)</button>
+          </div>
+        </form>
+        ${s.name ? `
+        <div class="actions-row">
+          <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
+            <button class="btn btn-extend" type="submit">🔄 +30 дней</button>
           </form>
-          <form method="post" action="/admin/slot/{{ s.slot }}/hide">
-            <button class="small" type="submit">{{ 'Показать' if s.get('status')=='hidden' else 'Скрыть' }}</button>
+          <form method="post" action="/admin/slot/${s.slot}/hide" style="display:inline">
+            <button class="btn btn-hide" type="submit">${s.status === 'hidden' ? '👁 Показать' : '🙈 Скрыть'}</button>
           </form>
-          <form method="post" action="/admin/slot/{{ s.slot }}/delete"
-                onsubmit="return confirm('Удалить место {{ s.slot }}?')">
-            <button class="small danger" type="submit">Удалить</button>
-          </form>
-          <form class="move-form" method="post" action="/admin/slot/{{ s.slot }}/move">
-            <input name="target" type="number" min="1" max="{{ slot_count }}" placeholder="№">
-            <button class="small" type="submit">↔</button>
+          <form method="post" action="/admin/slot/${s.slot}/delete" style="display:inline"
+                onsubmit="return confirm('Удалить?')">
+            <button class="btn btn-delete" type="submit">🗑 Удалить</button>
           </form>
         </div>
-      </td>
-    </tr>
-    {% endif %}
-    {% endfor %}
-  </tbody>
-</table>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function toggleSlot(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+</script>
 </body>
 </html>
