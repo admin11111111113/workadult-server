@@ -110,6 +110,7 @@
   <div class="tab active" onclick="showTab('overview')">📊 Обзор</div>
   <div class="tab" onclick="showTab('cities')">🏙️ По городам</div>
   <div class="tab" onclick="showTab('catalog')">🗂️ Каталог</div>
+  <div class="tab" onclick="showTab('vacancies')">💼 Вакансии</div>
 </div>
 
 <div class="content">
@@ -253,6 +254,107 @@
     <div class="cat-grid" id="catGrid"></div>
   </div>
 
+  <!-- ВАКАНСИИ -->
+  <div class="panel" id="tab-vacancies">
+    <div class="catalog-toolbar">
+      <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи с сайта — подмешивается к тем же карточкам на главной и в «Вакансиях»</span>
+      <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
+    </div>
+
+    <div class="add-card" id="vacAddCard">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Студия / компания</label>
+          <input id="vacOrg" placeholder="Название">
+        </div>
+        <div class="form-group">
+          <label>Вакансия</label>
+          <input id="vacTitle" placeholder="Например: вебкам-модель">
+        </div>
+        <div class="form-group">
+          <label>Зарплата / условия</label>
+          <input id="vacSalary" placeholder="до 60% от баланса">
+        </div>
+        <div class="form-group">
+          <label>Контакт</label>
+          <input id="vacContact" placeholder="@studio или +7...">
+        </div>
+        <div class="form-group full">
+          <label>Описание</label>
+          <textarea id="vacDesc" placeholder="Подробности"></textarea>
+        </div>
+        <div class="form-group full">
+          <label style="flex-direction:row;align-items:center;gap:8px;display:flex">
+            <input type="checkbox" id="vacPinned" style="width:16px;height:16px"> Закрепить (⭐ в ТОП-5 на главной)
+          </label>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn-save" onclick="submitVacAdd()">💾 Добавить</button>
+        <button class="btn btn-hide" onclick="toggleVacAddCard()">Отмена</button>
+      </div>
+    </div>
+
+    <div class="slots-grid">
+      {% for v in vacancies %}
+      <div class="slot-card {% if v.pinned %}premium{% endif %}">
+        <div class="slot-header" onclick="toggleSlot('vac-{{ v.key }}')">
+          <div>
+            <span class="slot-num {% if v.pinned %}premium{% endif %}">{% if v.pinned %}⭐ {% endif %}{{ v.title }}</span>
+            <div style="font-size:12px;color:#bbb;margin-top:2px">{{ v.org }}{% if v.salary %} · {{ v.salary }}{% endif %}</div>
+          </div>
+          <div class="slot-meta">
+            {% if v.pinned %}<span class="badge active">закреп</span>{% endif %}
+            <span style="color:#555">▾</span>
+          </div>
+        </div>
+        <div class="slot-body" id="vac-{{ v.key }}">
+          <form method="post" action="/admin/vacancy/save">
+            <input type="hidden" name="key" value="{{ v.key }}">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Студия / компания</label>
+                <input name="org" value="{{ v.org }}">
+              </div>
+              <div class="form-group">
+                <label>Вакансия</label>
+                <input name="title" value="{{ v.title }}">
+              </div>
+              <div class="form-group">
+                <label>Зарплата / условия</label>
+                <input name="salary" value="{{ v.salary }}">
+              </div>
+              <div class="form-group">
+                <label>Контакт</label>
+                <input name="contact" value="{{ v.contact }}">
+              </div>
+              <div class="form-group full">
+                <label>Описание</label>
+                <textarea name="desc">{{ v.desc }}</textarea>
+              </div>
+              <div class="form-group full">
+                <label style="flex-direction:row;align-items:center;gap:8px;display:flex">
+                  <input type="checkbox" name="pinned" {% if v.pinned %}checked{% endif %}> Закрепить (⭐ в ТОП-5 на главной)
+                </label>
+              </div>
+            </div>
+            <div class="actions-row">
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
+          </form>
+          <div class="actions-row">
+            <form method="post" action="/admin/vacancy/{{ v.key }}/delete" style="display:inline" onsubmit="return confirm('Удалить вакансию?')">
+              <button class="btn btn-delete" type="submit">🗑 Удалить</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="cat-empty">Пока нет добавленных вакансий</div>
+      {% endfor %}
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -260,7 +362,7 @@
 const ALL_SLOTS = {{ slots | tojson }};
 
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog'][i] === name));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'catalog') renderCatalog();
@@ -324,6 +426,36 @@ function renderCatalog() {
 
 function toggleAddCard() {
   document.getElementById('addCard').classList.toggle('open');
+}
+
+/* ---------- Вакансии ---------- */
+function toggleVacAddCard() {
+  document.getElementById('vacAddCard').classList.toggle('open');
+}
+
+function submitVacAdd() {
+  const org = document.getElementById('vacOrg').value.trim();
+  const title = document.getElementById('vacTitle').value.trim();
+  if (!org || !title) { alert('Заполните студию и название вакансии'); return; }
+
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/vacancy/save';
+  const fields = {
+    org: org, title: title,
+    salary: document.getElementById('vacSalary').value,
+    contact: document.getElementById('vacContact').value,
+    desc: document.getElementById('vacDesc').value,
+    pinned: document.getElementById('vacPinned').checked ? 'on' : ''
+  };
+  Object.entries(fields).forEach(([k, v]) => {
+    if (!v) return;
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
 }
 
 async function submitAdd() {

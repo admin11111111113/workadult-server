@@ -35,6 +35,9 @@ app.secret_key = SECRET_KEY
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 _LISTINGS_REF = "/workadult_studios"
+_VACANCIES_REF = "/workadult_vacancies"
+
+VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 
 def _slot_price(n):
     return 100 if n <= 10 else 25
@@ -116,6 +119,22 @@ def api_featured():
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
+@app.route("/api/board", methods=["GET"])
+def api_board():
+    """Вакансии, добавленные вручную из админки — слой поверх board.json,
+    самоподача через workadult-bots не трогается, сайт подмешивает эти же
+    записи к своим."""
+    raw = db.reference(_VACANCIES_REF).get() or {}
+    vacancies = []
+    for key, rec in raw.items():
+        if not isinstance(rec, dict):
+            continue
+        item = {f: rec.get(f, "") for f in VACANCY_FIELDS}
+        item["pinned"] = bool(rec.get("pinned"))
+        item["date"] = rec.get("date", "")
+        vacancies.append(item)
+    return jsonify({"ok": True, "vacancies": vacancies})
+
 @app.route("/api/click/<int:n>", methods=["POST"])
 def api_click(n):
     if not (1 <= n <= SLOT_COUNT):
@@ -169,9 +188,17 @@ def admin_dashboard():
         slots.append({"slot": n, "price": _slot_price(n), "days_left": days_left, "expired": expired, **rec})
     total_clicks = sum(int(s.get("clicks", 0)) for s in slots)
     occupied = sum(1 for s in slots if s.get("status") == "active" and not s.get("expired"))
+
+    raw_vac = db.reference(_VACANCIES_REF).get() or {}
+    vacancies = []
+    for key, rec in raw_vac.items():
+        if not isinstance(rec, dict):
+            continue
+        vacancies.append({"key": key, **rec})
+
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
-                           slot_count=SLOT_COUNT)
+                           slot_count=SLOT_COUNT, vacancies=vacancies)
 
 @app.route("/admin/slot/<int:n>", methods=["POST"])
 @_require_admin
@@ -243,6 +270,34 @@ def admin_slot_move(n):
     if rec and not dst_ref.get():
         dst_ref.set(rec)
         src_ref.delete()
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/vacancy/save", methods=["POST"])
+@_require_admin
+def admin_vacancy_save():
+    """Добавить новую вакансию (без key) или отредактировать существующую (с key)."""
+    key = request.form.get("key", "").strip()
+    ref_root = db.reference(_VACANCIES_REF)
+    existing = ref_root.child(key).get() if key else None
+    rec = {
+        "org":     request.form.get("org", "").strip()[:120],
+        "title":   request.form.get("title", "").strip()[:120],
+        "salary":  request.form.get("salary", "").strip()[:120],
+        "desc":    request.form.get("desc", "").strip()[:600],
+        "contact": request.form.get("contact", "").strip()[:200],
+        "pinned":  request.form.get("pinned") == "on",
+        "date":    (existing or {}).get("date") or datetime.now().strftime("%Y-%m-%d"),
+    }
+    if key and existing is not None:
+        ref_root.child(key).set(rec)
+    else:
+        ref_root.push(rec)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/vacancy/<key>/delete", methods=["POST"])
+@_require_admin
+def admin_vacancy_delete(key):
+    db.reference(_VACANCIES_REF).child(key).delete()
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/api/traffic")
