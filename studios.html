@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Каталог студий — Workadult.pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0a0a0f; color: #e6e6e6; margin: 0; padding: 0; }
+  header { background: #12121a; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e1e2e; }
+  header a { color: #e91e8c; font-weight: 700; font-size: 18px; text-decoration: none; }
+  header nav a { color: #9aa0aa; font-size: 13px; margin-left: 20px; text-decoration: none; }
+  header nav a:hover { color: #fff; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .hero { text-align: center; padding: 40px 0 20px; }
+  .hero h1 { font-size: 32px; margin: 0 0 8px; }
+  .hero p { color: #9aa0aa; font-size: 15px; }
+  .stats { display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
+  .stat { background: #12121a; padding: 10px 24px; border-radius: 8px; text-align: center; border: 1px solid #1e1e2e; }
+  .stat b { display: block; font-size: 22px; color: #e91e8c; }
+  .stat span { font-size: 11px; color: #9aa0aa; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 24px; }
+  .card { background: #12121a; border-radius: 12px; padding: 20px; border: 1px solid #1e1e2e; transition: border-color 0.2s, transform 0.1s; cursor: pointer; }
+  .card:hover { border-color: #e91e8c; transform: translateY(-2px); }
+  .card.empty { opacity: 0.35; cursor: default; border-style: dashed; }
+  .card.empty:hover { border-color: #1e1e2e; transform: none; }
+  .card.premium { border-color: #3a2a10; background: #14120a; }
+  .card.premium:hover { border-color: #f0b429; }
+  .slot-badge { font-size: 10px; color: #555; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .slot-badge.premium { color: #f0b429; }
+  .price-tag { font-size: 11px; font-weight: 700; }
+  .card-photo { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; }
+  .card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .card-city { font-size: 13px; color: #9aa0aa; margin-bottom: 10px; }
+  .card-desc { font-size: 13px; line-height: 1.5; color: #bbb; margin-bottom: 12px; max-height: 60px; overflow: hidden; }
+  .card-contacts { font-size: 12px; color: #e91e8c; margin-bottom: 6px; }
+  .card-url a { font-size: 12px; color: #6fdc8c; text-decoration: none; }
+  .empty-label { color: #444; font-size: 14px; text-align: center; padding: 20px 0; }
+  .free-badge { display: inline-block; font-size: 11px; background: #1e1030; color: #e91e8c; padding: 4px 10px; border-radius: 4px; }
+  .loading { text-align: center; padding: 80px; color: #555; font-size: 15px; }
+  .top-label { text-align: center; margin: 32px 0 8px; font-size: 13px; color: #f0b429; letter-spacing: 1px; text-transform: uppercase; }
+  .section-title { text-align: center; font-size: 20px; font-weight: 700; margin: 32px 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="https://workadult.pro">WORKADULT.PRO</a>
+  <nav>
+    <a href="https://workadult.pro/#pricing">Тарифы</a>
+    <a href="https://workadult.pro/vakansii.html">Вакансии</a>
+    <a href="https://workadult.pro/studii-katalog.html">Каталог студий</a>
+  </nav>
+</header>
+
+<div class="container">
+  <div class="hero">
+    <h1>Каталог вебкам студий</h1>
+    <p>Проверенные студии по всей России и СНГ. Места 1–10 в каждом городе — премиум размещение.</p>
+  </div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat"><b id="statOccupied">0</b><span>студий размещено</span></div>
+    <div class="stat"><b id="statFree">0</b><span>мест свободно</span></div>
+  </div>
+
+  <div id="grid" class="grid">
+    <div class="loading">⏳ Загружаем каталог...</div>
+  </div>
+</div>
+
+<script>
+const API = 'https://workadult-server.onrender.com';
+
+async function load() {
+  try {
+    const r = await fetch(API + '/api/listings');
+    const data = await r.json();
+    if (!data.ok) throw new Error('ошибка');
+
+    const slots = data.slots;
+    const occupied = slots.filter(s => s.listing).length;
+    document.getElementById('statOccupied').textContent = occupied;
+    document.getElementById('statFree').textContent = 100 - occupied;
+    document.getElementById('stats').style.display = 'flex';
+
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+
+    if (occupied === 0) {
+      grid.innerHTML = '<div class="loading">Пока нет размещённых студий. Станьте первыми!</div>';
+      return;
+    }
+
+    slots.forEach(s => {
+      const isPremium = s.slot <= 10;
+      const card = document.createElement('div');
+      card.className = 'card' + (s.listing ? (isPremium ? ' premium' : '') : ' empty');
+
+      if (s.listing) {
+        const l = s.listing;
+        card.onclick = () => {
+          fetch(API + '/api/click/' + s.slot, {method: 'POST'});
+          if (l.url) window.open(l.url, '_blank');
+          else if (l.contacts) alert('Контакты: ' + l.contacts);
+        };
+        card.innerHTML = `
+          <div class="slot-badge ${isPremium ? 'premium' : ''}">
+            <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
+            <span class="price-tag">${isPremium ? '$100/мес' : '$25/мес'}</span>
+          </div>
+          ${l.photo ? `<img class="card-photo" src="${l.photo}" alt="${l.name}" onerror="this.style.display='none'">` : ''}
+          <div class="card-name">${l.name}</div>
+          <div class="card-city">📍 ${l.city}</div>
+          ${l.desc ? `<div class="card-desc">${l.desc}</div>` : ''}
+          ${l.contacts ? `<div class="card-contacts">📞 ${l.contacts}</div>` : ''}
+          ${l.url ? `<div class="card-url"><a href="${l.url}" target="_blank">🌐 Перейти на сайт</a></div>` : ''}
+        `;
+      } else {
+        card.innerHTML = `
+          <div class="slot-badge ${isPremium ? 'premium' : ''}">
+            <span>${isPremium ? '⭐ Премиум #' + s.slot : 'Место #' + s.slot}</span>
+            <span class="price-tag">${isPremium ? '$100/мес' : '$25/мес'}</span>
+          </div>
+          <div class="empty-label">Место свободно</div>
+          <div style="text-align:center;margin-top:8px">
+            <a href="https://t.me/Workadult_feedback_bot" target="_blank"><span class="free-badge">Занять место →</span></a>
+          </div>
+        `;
+      }
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById('grid').innerHTML = '<div class="loading">Ошибка загрузки. Попробуйте позже.</div>';
+  }
+}
+
+load();
+</script>
+</body>
+</html>
