@@ -95,6 +95,28 @@
   .cat-empty { text-align: center; padding: 60px 0; color: #555; }
   .add-card { background: #1a1d24; border-radius: 12px; padding: 20px; border: 1px dashed #e91e8c; margin-bottom: 20px; display: none; }
   .add-card.open { display: block; }
+
+  /* Превью ТОП-5 — точная копия карточек с главной сайта */
+  .vboard-preview-label { font-size: 13px; color: #9aa0aa; margin-bottom: 12px; }
+  .vboard-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+  .vboard-card { position: relative; text-align: left; padding: 38px 22px 24px; border-radius: 16px; width: 220px;
+    background: linear-gradient(180deg, rgba(255,210,74,.12), rgba(255,255,255,.045));
+    border: 1px solid rgba(255,210,74,.5);
+    box-shadow: 0 0 0 1px rgba(255,210,74,.12), 0 10px 30px rgba(0,0,0,.4), 0 0 30px rgba(255,210,74,.18);
+    cursor: pointer; transition: transform .2s, box-shadow .2s; }
+  .vboard-card:hover { transform: translateY(-4px); box-shadow: 0 0 0 1px rgba(255,210,74,.32), 0 16px 42px rgba(0,0,0,.5), 0 0 48px rgba(255,210,74,.36); }
+  .vboard-card .pin { position: absolute; top: 14px; left: 18px; background: linear-gradient(120deg,#ffd24a,#f5a623); color: #2a2000; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 999px; letter-spacing: .5px; }
+  .vboard-card .org { font-size: 15px; font-weight: 800; text-transform: uppercase; color: #ffd24a; letter-spacing: .4px; margin: 4px 0 9px; line-height: 1.25; }
+  .vboard-card .title { font-size: 13px; font-weight: 600; color: #fff; line-height: 1.35; margin-bottom: 4px; }
+  .vboard-card .sal { font-size: 12px; font-weight: 500; color: #b0aacb; margin: 6px 0 0; }
+  .vboard-card .ct { font-size: 12px; font-weight: 600; color: #ff4d8d; margin-top: 14px; }
+
+  /* Бейджи каталога студий — как на реальной странице studii-katalog.html */
+  .badge-ver { display: inline-flex; align-items: center; gap: 4px; background: rgba(43,213,118,.13); color: #2bd576; border: 1px solid rgba(43,213,118,.3); border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+  .badge-prem2 { background: rgba(245,166,35,.14); color: #ffd24a; border: 1px solid rgba(245,166,35,.35); border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+  .fmt-chip { background: rgba(255,255,255,.05); border: 1px solid #333; color: #9aa0aa; border-radius: 8px; padding: 3px 9px; font-size: 11px; font-weight: 600; margin-right: 4px; display: inline-block; }
+  .fmt-checks { display: flex; gap: 12px; flex-wrap: wrap; }
+  .fmt-checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #ccc; }
 </style>
 </head>
 <body>
@@ -111,6 +133,7 @@
   <div class="tab" onclick="showTab('cities')">🏙️ По городам</div>
   <div class="tab" onclick="showTab('catalog')">🗂️ Каталог</div>
   <div class="tab" onclick="showTab('vacancies')">💼 Вакансии</div>
+  <div class="tab" onclick="showTab('studii')">🏙️ Студии (каталог)</div>
 </div>
 
 <div class="content">
@@ -261,6 +284,23 @@
       <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
     </div>
 
+    <div class="vboard-preview-label">⭐ Так закреплённые вакансии выглядят в ТОП-5 на главной сайта — клик по карточке открывает редактирование</div>
+    {% if vac_top5 %}
+    <div class="vboard-row">
+      {% for v in vac_top5 %}
+      <div class="vboard-card" onclick="showTab('vacancies');document.getElementById('vac-{{ v.key }}').classList.add('open');document.getElementById('vac-{{ v.key }}').scrollIntoView({behavior:'smooth',block:'center'})">
+        <span class="pin">★ ТОП</span>
+        <div class="org">{{ v.org }}</div>
+        <div class="title">{{ v.title }}</div>
+        {% if v.salary %}<div class="sal">{{ v.salary }}</div>{% endif %}
+        <div class="ct">Написать →</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="vboard-preview-label" style="color:#555">Пока нет закреплённых вакансий — отметьте чекбоксом «Закрепить» у любой ниже</div>
+    {% endif %}
+
     <div class="add-card" id="vacAddCard">
       <div class="form-grid">
         <div class="form-group">
@@ -355,6 +395,128 @@
     </div>
   </div>
 
+  <!-- СТУДИИ (студий-каталог с сайта) -->
+  <div class="panel" id="tab-studii">
+    <div class="catalog-toolbar">
+      <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи через Telegram-бота на studii-katalog.html — подмешивается к тем же карточкам</span>
+      <button class="btn-add" onclick="toggleStudiiAddCard()">+ Добавить студию</button>
+    </div>
+
+    <div class="add-card" id="studiiAddCard">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Название студии</label>
+          <input id="stName" placeholder="Название">
+        </div>
+        <div class="form-group">
+          <label>Город</label>
+          <input id="stCity" placeholder="Город">
+        </div>
+        <div class="form-group">
+          <label>% выплат</label>
+          <input id="stPercent" placeholder="Например: 50-70%">
+        </div>
+        <div class="form-group">
+          <label>Контакт</label>
+          <input id="stContact" placeholder="@studio или +7...">
+        </div>
+        <div class="form-group full">
+          <label>Описание</label>
+          <textarea id="stDesc" placeholder="Условия, оборудование, поддержка"></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Форматы работы</label>
+          <div class="fmt-checks">
+            {% for f in catalog_formats %}
+            <label><input type="checkbox" class="stFmt" value="{{ f }}"> {{ catalog_fmt_labels[f] }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="form-group full">
+          <label style="flex-direction:row;align-items:center;gap:16px;display:flex">
+            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="stVerified"> ✓ Проверено</span>
+            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="stPremium"> ⭐ Премиум</span>
+          </label>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn-save" onclick="submitStudiiAdd()">💾 Добавить в каталог</button>
+        <button class="btn btn-hide" onclick="toggleStudiiAddCard()">Отмена</button>
+      </div>
+    </div>
+
+    <div class="slots-grid">
+      {% for s in catalog_studios %}
+      <div class="slot-card {% if s.premium %}premium{% endif %}">
+        <div class="slot-header" onclick="toggleSlot('st-{{ s.key }}')">
+          <div>
+            <span class="slot-num {% if s.premium %}premium{% endif %}">
+              {{ s.name }}
+              {% if s.premium %}<span class="badge-prem2">⭐ Премиум</span>{% elif s.verified %}<span class="badge-ver">✓ Проверено</span>{% endif %}
+            </span>
+            <div style="font-size:12px;color:#bbb;margin-top:4px">
+              📍 {{ s.city }}{% if s.percent %} · 💰 {{ s.percent }}{% endif %}
+              {% for f in catalog_formats %}{% if s.get('fmt_' + f) %}<span class="fmt-chip">{{ catalog_fmt_labels[f] }}</span>{% endif %}{% endfor %}
+            </div>
+          </div>
+          <span style="color:#555">▾</span>
+        </div>
+        <div class="slot-body" id="st-{{ s.key }}">
+          <form method="post" action="/admin/catalog/save">
+            <input type="hidden" name="key" value="{{ s.key }}">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Название студии</label>
+                <input name="name" value="{{ s.name }}">
+              </div>
+              <div class="form-group">
+                <label>Город</label>
+                <input name="city" value="{{ s.city }}">
+              </div>
+              <div class="form-group">
+                <label>% выплат</label>
+                <input name="percent" value="{{ s.percent }}">
+              </div>
+              <div class="form-group">
+                <label>Контакт</label>
+                <input name="contact" value="{{ s.contact }}">
+              </div>
+              <div class="form-group full">
+                <label>Описание</label>
+                <textarea name="desc">{{ s.desc }}</textarea>
+              </div>
+              <div class="form-group full">
+                <label>Форматы работы</label>
+                <div class="fmt-checks">
+                  {% for f in catalog_formats %}
+                  <label><input type="checkbox" name="fmt" value="{{ f }}" {% if s.get('fmt_' + f) %}checked{% endif %}> {{ catalog_fmt_labels[f] }}</label>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="form-group full">
+                <label style="flex-direction:row;align-items:center;gap:16px;display:flex">
+                  <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" name="verified" {% if s.verified %}checked{% endif %}> ✓ Проверено</span>
+                  <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" name="premium" {% if s.premium %}checked{% endif %}> ⭐ Премиум</span>
+                </label>
+              </div>
+            </div>
+            <div class="actions-row">
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
+          </form>
+          <div class="actions-row">
+            <form method="post" action="/admin/catalog/{{ s.key }}/delete" style="display:inline" onsubmit="return confirm('Удалить студию из каталога?')">
+              <button class="btn btn-delete" type="submit">🗑 Удалить</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="cat-empty">Пока нет добавленных студий</div>
+      {% endfor %}
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -362,7 +524,7 @@
 const ALL_SLOTS = {{ slots | tojson }};
 
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies'][i] === name));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies','studii'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'catalog') renderCatalog();
@@ -452,6 +614,42 @@ function submitVacAdd() {
     if (!v) return;
     const inp = document.createElement('input');
     inp.type = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/* ---------- Студии (каталог с сайта) ---------- */
+function toggleStudiiAddCard() {
+  document.getElementById('studiiAddCard').classList.toggle('open');
+}
+
+function submitStudiiAdd() {
+  const name = document.getElementById('stName').value.trim();
+  const city = document.getElementById('stCity').value.trim();
+  if (!name || !city) { alert('Заполните название и город'); return; }
+
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/catalog/save';
+  const fields = {
+    name: name, city: city,
+    percent: document.getElementById('stPercent').value,
+    contact: document.getElementById('stContact').value,
+    desc: document.getElementById('stDesc').value,
+    verified: document.getElementById('stVerified').checked ? 'on' : '',
+    premium: document.getElementById('stPremium').checked ? 'on' : ''
+  };
+  Object.entries(fields).forEach(([k, v]) => {
+    if (!v) return;
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
+    form.appendChild(inp);
+  });
+  document.querySelectorAll('.stFmt:checked').forEach(cb => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'fmt'; inp.value = cb.value;
     form.appendChild(inp);
   });
   document.body.appendChild(form);
