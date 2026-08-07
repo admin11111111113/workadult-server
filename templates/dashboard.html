@@ -160,6 +160,28 @@
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
+      <h3>Тарифы на размещение (Каталог / По городам)</h3>
+      <form method="post" action="/admin/pricing/save" class="form-grid" style="max-width:560px">
+        <div class="form-group">
+          <label>Премиум-мест на город</label>
+          <input type="number" name="premium_per_city" value="{{ pricing.premium_per_city }}" min="0" max="{{ slot_count }}">
+        </div>
+        <div class="form-group">
+          <label>Цена премиум-места ($/мес)</label>
+          <input type="number" name="premium_price" value="{{ pricing.premium_price }}" min="0">
+        </div>
+        <div class="form-group">
+          <label>Цена обычного места ($/мес)</label>
+          <input type="number" name="regular_price" value="{{ pricing.regular_price }}" min="0">
+        </div>
+        <div class="form-group full">
+          <button class="btn btn-save" type="submit">💾 Сохранить тарифы</button>
+        </div>
+      </form>
+      <div class="traffic-note">Применяется к новым и пересохранённым местам. У уже занятых цена зафиксирована на момент размещения — нажми «Сохранить» на карточке места, чтобы пересчитать по новому тарифу.</div>
+    </div>
+
+    <div class="city-stats" style="margin-bottom:32px">
       <h3>Посещаемость сайта (Яндекс.Метрика)</h3>
       <div id="trafficBox"><div class="traffic-note">⏳ загрузка...</div></div>
     </div>
@@ -522,6 +544,7 @@
 <script>
 // Данные слотов из сервера
 const ALL_SLOTS = {{ slots | tojson }};
+const PRICING = {{ pricing | tojson }};
 
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','cities','catalog','vacancies','studii'][i] === name));
@@ -555,7 +578,7 @@ async function loadTraffic() {
 }
 loadTraffic();
 
-/* ---------- Каталог (карточки как на сайте) ---------- */
+/* ---------- Каталог (карточки как на сайте, сгруппировано по городам) ---------- */
 function renderCatalog() {
   const grid = document.getElementById('catGrid');
   const items = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.expired);
@@ -563,25 +586,37 @@ function renderCatalog() {
     grid.innerHTML = '<div class="cat-empty">В каталоге пока никого нет</div>';
     return;
   }
-  grid.innerHTML = items.map(s => {
-    const isPremium = s.slot <= 10;
-    return `
-    <div class="cat-card ${isPremium ? 'premium' : ''}">
-      <div class="cat-badge ${isPremium ? 'premium' : ''}">
-        <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
-        <span>${isPremium ? '$100/мес' : '$25/мес'}</span>
-      </div>
-      ${s.photo ? `<img class="cat-photo" src="${s.photo}" alt="" onerror="this.style.display='none'">` : ''}
-      <div class="cat-name">${s.name}</div>
-      <div class="cat-city">📍 ${s.city || ''}</div>
-      ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
-      ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
-      ${s.url ? `<div class="cat-url"><a href="${s.url}" target="_blank">🌐 ${s.url}</a></div>` : ''}
-      <div class="cat-actions">
-        <form method="post" action="/admin/slot/${s.slot}/delete" onsubmit="return confirm('Убрать из каталога?')">
-          <button class="btn btn-delete" type="submit">🗑 Убрать из каталога</button>
-        </form>
-      </div>
+  const byCity = {};
+  items.forEach(s => { (byCity[s.city || 'Без города'] = byCity[s.city || 'Без города'] || []).push(s); });
+  const cities = Object.keys(byCity).sort();
+
+  grid.innerHTML = cities.map(city => {
+    const list = byCity[city].slice().sort((a, b) => (b.price || 0) - (a.price || 0));
+    const cards = list.map(s => {
+      const isPremium = !!s.premium;
+      const price = s.price != null ? s.price : (isPremium ? PRICING.premium_price : PRICING.regular_price);
+      return `
+      <div class="cat-card ${isPremium ? 'premium' : ''}">
+        <div class="cat-badge ${isPremium ? 'premium' : ''}">
+          <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
+          <span>$${price}/мес</span>
+        </div>
+        ${s.photo ? `<img class="cat-photo" src="${s.photo}" alt="" onerror="this.style.display='none'">` : ''}
+        <div class="cat-name">${s.name}</div>
+        <div class="cat-city">📍 ${s.city || ''}</div>
+        ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
+        ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
+        ${s.url ? `<div class="cat-url"><a href="${s.url}" target="_blank">🌐 ${s.url}</a></div>` : ''}
+        <div class="cat-actions">
+          <form method="post" action="/admin/slot/${s.slot}/delete" onsubmit="return confirm('Убрать из каталога?')">
+            <button class="btn btn-delete" type="submit">🗑 Убрать из каталога</button>
+          </form>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="cat-city-group" style="grid-column:1/-1;margin-top:20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:10px">📍 ${city} <span style="font-size:12px;color:#9aa0aa;font-weight:400">— ${list.length} студ.</span></div>
+      <div class="cat-grid">${cards}</div>
     </div>`;
   }).join('');
 }
@@ -691,19 +726,18 @@ function filterCities(q) {
 function showCity(city) {
   document.querySelectorAll('.city-btn').forEach(b => b.classList.toggle('active', b.dataset.city === city));
   document.getElementById('cityTitle').textContent = city;
-  
-  // Найти слоты для этого города (или пустые для заполнения)
-  // Логика: показываем 10 слотов для города
-  // Занятые этим городом + свободные места
+
+  // Топ-N мест в городе — премиум (см. тарифы в «Обзоре»), остальные обычные.
+  // Занятые этим городом + свободные места (добавляем из общего пула до 10 карточек на просмотр).
   const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active');
   const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, 10 - citySlots.length);
-  
-  document.getElementById('citySubtitle').textContent = citySlots.length + ' из 10 мест занято';
+
+  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято · премиум-мест в городе: ' + PRICING.premium_per_city;
   document.getElementById('slotsPanel').classList.add('active');
-  
+
   const grid = document.getElementById('slotsGrid');
   grid.innerHTML = '';
-  
+
   // Показываем занятые слоты этого города
   citySlots.forEach((s, i) => renderSlot(grid, s, i + 1, city));
   // Добавляем свободные места
@@ -711,21 +745,25 @@ function showCity(city) {
 }
 
 function renderSlot(grid, s, localNum, city) {
-  const isPremium = localNum <= 10;
   const isOccupied = s.name && s.status === 'active';
   const isExpired = s.expired;
-  
+  // У занятого места цена/премиум зафиксированы при размещении; у пустого —
+  // показываем, чем оно станет, если занять его следующим в этом городе.
+  const isPremium = isOccupied ? !!s.premium : localNum <= PRICING.premium_per_city;
+  const price = isOccupied ? (s.price != null ? s.price : (isPremium ? PRICING.premium_price : PRICING.regular_price))
+                            : (isPremium ? PRICING.premium_price : PRICING.regular_price);
+
   let cardClass = 'slot-card';
   if (isPremium) cardClass += ' premium';
   if (isOccupied && !isExpired) cardClass += ' occupied';
   if (isExpired) cardClass += ' expired-card';
-  
+
   let badgeHtml = '';
   if (!s.name) badgeHtml = '<span class="badge empty">пусто</span>';
   else if (isExpired) badgeHtml = '<span class="badge expired">истёк</span>';
   else if (s.status === 'hidden') badgeHtml = '<span class="badge hidden">скрыто</span>';
   else badgeHtml = '<span class="badge active">активно</span>';
-  
+
   let daysHtml = '';
   if (s.days_left !== null && s.days_left !== undefined) {
     const cls = s.days_left <= 0 ? 'danger' : s.days_left <= 3 ? 'warn' : '';
@@ -733,13 +771,13 @@ function renderSlot(grid, s, localNum, city) {
   }
 
   const slotId = 'slot-' + s.slot;
-  
+
   grid.innerHTML += `
     <div class="${cardClass}">
       <div class="slot-header" onclick="toggleSlot('${slotId}')">
         <div>
           <span class="slot-num ${isPremium ? 'premium' : ''}">
-            ${isPremium ? '⭐' : '○'} Место #${localNum} (глоб. #${s.slot}) · ${isPremium ? '$100' : '$25'}/мес
+            ${isPremium ? '⭐' : '○'} Место #${localNum} (глоб. #${s.slot}) · $${price}/мес
           </span>
           ${s.name ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${s.name}</div>` : ''}
         </div>

@@ -92,7 +92,7 @@ async function load() {
     }
 
     slots.forEach(s => {
-      const isPremium = s.slot <= 10;
+      const isPremium = s.listing ? !!s.listing.premium : false;
       const card = document.createElement('div');
       card.className = 'card' + (s.listing ? (isPremium ? ' premium' : '') : ' empty');
 
@@ -105,8 +105,8 @@ async function load() {
         };
         card.innerHTML = `
           <div class="slot-badge ${isPremium ? 'premium' : ''}">
-            <span>${isPremium ? '⭐ Премиум место #' + s.slot : 'Место #' + s.slot}</span>
-            <span class="price-tag">${isPremium ? '$100/мес' : '$25/мес'}</span>
+            <span>${isPremium ? '⭐ Премиум место — ' + l.city : 'Место — ' + l.city}</span>
+            <span class="price-tag">$${s.price}/мес</span>
           </div>
           ${l.photo ? `<img class="card-photo" src="${l.photo}" alt="${l.name}" onerror="this.style.display='none'">` : ''}
           <div class="card-name">${l.name}</div>
@@ -117,9 +117,9 @@ async function load() {
         `;
       } else {
         card.innerHTML = `
-          <div class="slot-badge ${isPremium ? 'premium' : ''}">
-            <span>${isPremium ? '⭐ Премиум #' + s.slot : 'Место #' + s.slot}</span>
-            <span class="price-tag">${isPremium ? '$100/мес' : '$25/мес'}</span>
+          <div class="slot-badge">
+            <span>Свободное место</span>
+            <span class="price-tag">от $${s.price}/мес</span>
           </div>
           <div class="empty-label">Место свободно</div>
           <div style="text-align:center;margin-top:8px">
