@@ -1,20 +1,28 @@
 # -*- coding: utf-8 -*-
 """
 Модерация объявлений через Telegram: единая очередь заявок (студии/вакансии/
-резюме) с подачей через сайт (Telegram Login Widget) и одобрением кнопками
-в Telegram у админа.
+резюме) с подачей через сайт (Telegram Login Widget).
 
-Модель оплаты студий — «база + буст»:
-  • Подача студии стоит ФИКСИРОВАННУЮ submit_price (см. тарифы в админке) —
-    разовая оплата, после подтверждения объявление публикуется НАВСЕГДА как
-    обычное (без цвета/приоритета).
-  • Поверх — необязательный ПОМЕСЯЧНЫЙ буст (бронза/серебро/золото/на
-    главной), поднимающий цвет и место в списке города (либо прямо на
-    главную сайта). Покупается ОТДЕЛЬНО, в любой момент — сразу после
-    публикации (бот сам предлагает) или позже командой /boost. Не продлил —
-    буст тихо истекает (см. app.py:_effective_boost), сама публикация
-    остаётся, это не связано.
-Вакансии/резюме — бесплатно, публикуются сразу по «Одобрить».
+Студии — тариф выбирается СРАЗУ в форме подачи на сайте (studii-podat.html),
+оплата идёт СРАЗУ после отправки (без предварительного одобрения контента).
+После успешной оплаты заявка уходит на финальное рассмотрение — админу
+приходит уведомление и в Telegram (кнопки), и она видна в самой админке
+(вкладка «Рассмотрение новых»); из ЛЮБОГО из двух мест можно опубликовать,
+отредактировать перед публикацией или удалить. Деньги уже собраны на этом
+этапе — если удаляют, возврат (если нужен) решается вручную, автоматически
+не делается.
+
+Тарифы студии — «база + буст»:
+  • submit_price — обычное размещение (без цвета), разово, навсегда.
+  • bronze/silver/gold — помесячный буст, поднимает цвет/место в городе,
+    максимум N мест каждого на город (тарифы — в админке).
+  • home — помесячный буст, топ на главной сайта (общий лимит, не по городу).
+  Если выбранный платный уровень уже занят — заявка тихо откатывается на
+  submit_price (обычное), и по желанию ставится в лист ожидания (уведомим,
+  когда цветное место освободится — см. notify_waitlist()).
+
+Вакансии/резюме — бесплатно: заявка → админ одобряет/отклоняет/редактирует
+в Telegram кнопками → публикуется сразу по «Одобрить».
 
 Оплата — USDT TRC-20 на ТОТ ЖЕ кошелёк, что у VideoRils (USDT_WALLET),
 проверка — ТЕМ ЖЕ механизмом: он-чейн сверка через TronGrid по контракту
@@ -22,16 +30,9 @@ USDT-TRC20, допуск ±3 USDT, идемпотентность по txid.
 
 Один бот на всё (WA_BOT_TOKEN) — тот же, что в Telegram Login Widget на
 сайте. Пишет и подателю (оплата, буст, статус), и админу (заявки на
-модерацию) в его личный чат WA_ADMIN_CHAT_ID. Один бот, а не два, потому
-что слать сообщения можно только тому, кто хоть раз открывал чат именно
-с этим ботом — а Login Widget это обеспечивает только для одного бота.
-Раз бот общий, действия админа (appr/edit/rej) ПРОВЕРЯЮТСЯ по chat_id —
-иначе любой пользователь того же бота мог бы подделать callback_data и
-одобрить/отклонить чужую заявку.
-
-Упрощение (осознанное, не баг): у пользователя в один момент времени только
-ОДИН активный платёж (submit ИЛИ boost) — новый вызов тарифных кнопок
-перезаписывает предыдущий незавершённый. Для MVP этого достаточно.
+рассмотрение) в его личный чат WA_ADMIN_CHAT_ID. Раз бот общий, действия
+админа ПРОВЕРЯЮТСЯ по chat_id — иначе любой пользователь того же бота мог
+бы подделать callback_data и опубликовать/удалить чужую заявку.
 """
 import os
 import time
@@ -66,10 +67,12 @@ _BOOST_CTX_REF = "/workadult_boost_ctx"            # tg_user_id -> какое м
 _PROCESSED_TX_REF = "/workadult_processed_tx"
 _RESUMES_REF = "/workadult_resumes"
 _ADMIN_STATE_REF = "/workadult_admin_state"        # какую заявку сейчас редактирует чат админа
+_WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
 
 BOOST_ORDER = ("bronze", "silver", "gold", "home")   # порядок кнопок, дешёвый → дорогой
 BOOST_BUTTON_LABEL = {"bronze": "🥉 Бронза", "silver": "🥈 Серебро",
                        "gold": "🥇 Золото", "home": "🏠 На главной"}
+TIER_LABEL = dict(BOOST_BUTTON_LABEL, regular="Обычное")
 KIND_LABEL = {"studio": "🏢 Студия", "vacancy": "💼 Вакансия", "resume": "🔎 Резюме"}
 
 _deps = {}   # заполняется init_app() — переиспользуем логику тарифов/слотов из app.py
@@ -166,8 +169,76 @@ def _who(sub):
     return name + (f" (@{un})" if un else "")
 
 
+# ─────────────────────────── уровень места (эффективный, с учётом истечения) ──────────────
+def _eff_tier(rec):
+    t = rec.get("boost_tier") or "regular"
+    if t == "regular":
+        return "regular"
+    exp = rec.get("boost_expires_at")
+    if exp and time.time() > exp:
+        return "regular"
+    return t
+
+
+def _tier_count(raw, tier, city=None, exclude_slot=None):
+    slot_key = _deps["slot_key"]
+    slot_count = _deps["slot_count"]
+    c = 0
+    for n in range(1, slot_count + 1):
+        if n == exclude_slot:
+            continue
+        rec = raw.get(slot_key(n))
+        if not rec or not rec.get("name"):
+            continue
+        if tier == "home":
+            if _eff_tier(rec) == "home":
+                c += 1
+        elif rec.get("city") == city and _eff_tier(rec) == tier:
+            c += 1
+    return c
+
+
+def _resolve_tier(desired_tier, city, pricing):
+    """По желаемому уровню и текущей занятости города возвращает
+    (итоговый_уровень, цена, откатили_ли_на_обычное)."""
+    if desired_tier == "regular" or desired_tier not in BOOST_ORDER:
+        return "regular", pricing["submit_price"], False
+    listings_ref = _deps["listings_ref"]
+    raw = db.reference(listings_ref).get() or {}
+    cnt = _tier_count(raw, desired_tier, city)
+    cap = pricing[f"{desired_tier}_count"]
+    if cnt >= cap:
+        return "regular", pricing["submit_price"], True
+    return desired_tier, pricing[f"{desired_tier}_price"], False
+
+
+# ─────────────────────────── лист ожидания на занятые уровни ──────────────
+def _join_waitlist(city, tier, tg_user_id):
+    db.reference(f"{_WAITLIST_REF}/{city}/{tier}").push(
+        {"tg_user_id": tg_user_id, "requested_at": time.time()})
+
+
+def notify_waitlist(city, tier):
+    """Публичная — дёргается из app.py, когда место освобождается вручную
+    (админ удалил/скрыл забустченное место или снял буст при сохранении).
+    Уведомляет всех в очереди этого города+уровня и очищает список."""
+    if tier not in BOOST_ORDER:
+        return
+    ref = db.reference(f"{_WAITLIST_REF}/{city}/{tier}")
+    entries = ref.get() or {}
+    if not entries:
+        return
+    label = TIER_LABEL.get(tier, tier)
+    for _, e in entries.items():
+        if isinstance(e, dict) and e.get("tg_user_id"):
+            _send(WA_BOT_TOKEN, e["tg_user_id"],
+                  f"🎉 В городе {city} освободилось место уровня {label}! "
+                  f"Успейте подать заявку: https://workadult.pro/studii-podat.html")
+    ref.delete()
+
+
 # ─────────────────────────── приём заявок с сайта ──────────────
-def _new_submission(sub_type, fields, auth):
+def _new_submission(sub_type, fields, auth, extra=None):
     tg_id = auth.get("id")
     if not tg_id:
         return None, "auth"
@@ -177,25 +248,23 @@ def _new_submission(sub_type, fields, auth):
         "tg_name": (str(auth.get("first_name", "")) + " " + str(auth.get("last_name", ""))).strip(),
         "created_at": datetime.now().isoformat(),
     }
+    if extra:
+        sub.update(extra)
     ref = db.reference(_SUBMISSIONS_REF).push(sub)
-    sub_id = ref.key
-    text = f"🆕 Новая заявка · {KIND_LABEL[sub_type]}\n\n{_fmt_fields(sub_type, fields)}\n\n👤 {_who(sub)}"
-    buttons = [
-        [{"text": "✅ Одобрить", "callback_data": f"appr:{sub_id}"},
-         {"text": "✏️ Редактировать", "callback_data": f"edit:{sub_id}"}],
-        [{"text": "❌ Отклонить", "callback_data": f"rej:{sub_id}"}],
-    ]
-    res = _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
-    msg_id = (res.get("result") or {}).get("message_id")
-    if msg_id:
-        ref.child("admin_chat_msg_id").set(msg_id)
-    return sub_id, None
+    return ref.key, sub
 
 
 def _submit_studio():
+    """Студия: тариф выбирается прямо тут, оплата запускается сразу (без
+    предварительного одобрения контента) — рассмотрение админом идёт ПОСЛЕ
+    оплаты (см. _finish_submit_payment -> _notify_admin_review)."""
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
     form = data.get("form") or {}
+    tg_id = auth.get("id")
+    if not tg_id:
+        return jsonify({"ok": False, "error": "auth"}), 400
+
     fields = {
         "name": (form.get("studio") or form.get("name") or "").strip()[:120],
         "city": (form.get("city") or "").strip()[:80],
@@ -211,9 +280,35 @@ def _submit_studio():
     }
     if not fields["name"] or not fields["city"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
-    sub_id, err = _new_submission("studio", fields, auth)
-    if err:
-        return jsonify({"ok": False, "error": err}), 400
+
+    desired_tier = (form.get("desired_tier") or "regular").strip()
+    pricing = _deps["get_pricing"]()
+    tier, price, capped = _resolve_tier(desired_tier, fields["city"], pricing)
+
+    sub_id, sub = _new_submission("studio", fields, auth, extra={
+        "status": "awaiting_payment", "tier": tier, "price": price,
+    })
+
+    amount = _reserve_amount(tg_id, price)
+    db.reference(f"{_PENDING_PAY_REF}/{tg_id}").set({
+        "kind": "submit", "sub_id": sub_id, "price": price, "amount": amount,
+        "created_at": time.time(),
+    })
+
+    note = ""
+    if capped:
+        note = f"\n\n⚠️ Тариф «{TIER_LABEL.get(desired_tier, desired_tier)}» в городе {fields['city']} сейчас занят — оформляем как «{TIER_LABEL['regular']}» (${price})."
+        if form.get("notify_waitlist") in ("on", "true", "1", True):
+            _join_waitlist(fields["city"], desired_tier, tg_id)
+            note += " Освободится место — напишем вам."
+
+    perm = tier == "regular"
+    _send(WA_BOT_TOKEN, tg_id,
+          f"💳 Тариф: {TIER_LABEL.get(tier, 'Обычное')}{note}\n\n"
+          f"Переведите <b>{amount} USDT</b> в сети <b>TRC-20 (Tron)</b> на адрес:\n"
+          f"<code>{USDT_WALLET}</code>\n\n"
+          f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
+          f"После оплаты пришлите сюда одним сообщением хэш транзакции (TxID).")
     return jsonify({"ok": True})
 
 
@@ -230,9 +325,10 @@ def _submit_vacancy():
     }
     if not fields["title"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
-    sub_id, err = _new_submission("vacancy", fields, auth)
-    if err:
-        return jsonify({"ok": False, "error": err}), 400
+    sub_id, sub = _new_submission("vacancy", fields, auth)
+    if sub_id is None:
+        return jsonify({"ok": False, "error": "auth"}), 400
+    _notify_admin_pending(sub_id, sub)
     return jsonify({"ok": True})
 
 
@@ -247,10 +343,45 @@ def _submit_resume():
     }
     if not fields["experience"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
-    sub_id, err = _new_submission("resume", fields, auth)
-    if err:
-        return jsonify({"ok": False, "error": err}), 400
+    sub_id, sub = _new_submission("resume", fields, auth)
+    if sub_id is None:
+        return jsonify({"ok": False, "error": "auth"}), 400
+    _notify_admin_pending(sub_id, sub)
     return jsonify({"ok": True})
+
+
+def _notify_admin_pending(sub_id, sub):
+    """Вакансии/резюме — бесплатные, ждут одобрения ДО публикации."""
+    text = f"🆕 Новая заявка · {KIND_LABEL[sub['type']]}\n\n{_fmt_fields(sub['type'], sub['fields'])}\n\n👤 {_who(sub)}"
+    buttons = [
+        [{"text": "✅ Одобрить", "callback_data": f"appr:{sub_id}"},
+         {"text": "✏️ Редактировать", "callback_data": f"edit:{sub_id}"}],
+        [{"text": "❌ Отклонить", "callback_data": f"rej:{sub_id}"}],
+    ]
+    res = _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
+    msg_id = (res.get("result") or {}).get("message_id")
+    if msg_id:
+        db.reference(f"{_SUBMISSIONS_REF}/{sub_id}/admin_chat_msg_id").set(msg_id)
+
+
+def _notify_admin_review(sub_id, sub):
+    """Студия оплачена — финальное решение админа: опубликовать / отредактировать
+    и опубликовать / удалить. Деньги уже собраны на этом шаге."""
+    f = sub["fields"]
+    tier = sub.get("tier", "regular")
+    price = sub.get("price")
+    perm = tier == "regular"
+    text = (f"💰 Оплачено · {TIER_LABEL.get(tier, 'Обычное')} (${price}{'  разово' if perm else '/мес'})\n\n"
+            f"{_fmt_fields('studio', f)}\n\n👤 {_who(sub)}")
+    buttons = [
+        [{"text": "✅ Опубликовать", "callback_data": f"pub:{sub_id}"},
+         {"text": "✏️ Редактировать", "callback_data": f"pedit:{sub_id}"}],
+        [{"text": "🗑 Удалить", "callback_data": f"pdel:{sub_id}"}],
+    ]
+    res = _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
+    msg_id = (res.get("result") or {}).get("message_id")
+    if msg_id:
+        db.reference(f"{_SUBMISSIONS_REF}/{sub_id}/admin_chat_msg_id").set(msg_id)
 
 
 # ─────────────────────────── единый вебхук (один бот) ──────────────
@@ -264,6 +395,8 @@ def _webhook():
             data = cb.get("data", "")
             if data.startswith(("appr:", "edit:", "rej:")):
                 _handle_admin_callback(cb)
+            elif data.startswith(("pub:", "pedit:", "pdel:")):
+                _handle_review_callback(cb)
             elif data.startswith("boostpick:"):
                 _handle_user_callback(cb)
             return jsonify({"ok": True})
@@ -286,17 +419,19 @@ def _handle_message(msg):
         if state and state.get("editing"):
             _handle_admin_edit_text(chat_id, text, state)
             return
+        if state and state.get("editing_review"):
+            _handle_review_edit_text(chat_id, text, state)
+            return
     _handle_user_message(chat_id, text)
 
 
+# ─────────────────────────── вакансии/резюме: одобрить ДО публикации (бесплатно) ──────────────
 def _handle_admin_callback(cb):
     data = cb.get("data", "")
     cb_id = cb.get("id")
     chat_id = cb["message"]["chat"]["id"]
     msg_id = cb["message"]["message_id"]
     if chat_id != _admin_chat_id():
-        # Общий бот — без этой проверки кто угодно мог бы прислать
-        # "appr:<id>" и одобрить/отклонить чужую заявку.
         _answer_cb(WA_BOT_TOKEN, cb_id, "недоступно")
         return
     try:
@@ -314,15 +449,14 @@ def _handle_admin_callback(cb):
         return
 
     if action == "appr":
-        _approve(sub_id, sub)
+        approve_free(sub_id)
         _edit(WA_BOT_TOKEN, chat_id, msg_id,
-              f"✅ Одобрено\n\n{_fmt_fields(sub['type'], sub['fields'])}")
+              f"✅ Одобрено и опубликовано\n\n{_fmt_fields(sub['type'], sub['fields'])}")
         _answer_cb(WA_BOT_TOKEN, cb_id, "Одобрено")
     elif action == "rej":
-        ref.update({"status": "rejected"})
+        reject_pending(sub_id)
         _edit(WA_BOT_TOKEN, chat_id, msg_id,
               f"❌ Отклонено\n\n{_fmt_fields(sub['type'], sub['fields'])}")
-        _send(WA_BOT_TOKEN, sub["tg_user_id"], "❌ Ваше объявление отклонено модератором.")
         _answer_cb(WA_BOT_TOKEN, cb_id, "Отклонено")
     elif action == "edit":
         db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").set({"editing": sub_id, "msg_id": msg_id})
@@ -339,44 +473,23 @@ def _handle_admin_edit_text(chat_id, text, state):
     if not sub or sub.get("status") != "pending":
         return
     f = dict(sub.get("fields") or {})
-    # Правим основное текстовое поле по типу заявки — остальные поля (город,
-    # контакт и т.д.) остаются как в исходной подаче.
-    if sub["type"] in ("studio", "vacancy"):
+    if sub["type"] == "vacancy":
         f["desc"] = text[:600]
     elif sub["type"] == "resume":
         f["experience"] = text[:500]
     ref.child("fields").set(f)
     sub["fields"] = f
+    approve_free(sub_id)
     _edit(WA_BOT_TOKEN, chat_id, state.get("msg_id"),
-          f"✅ Отредактировано и одобрено\n\n{_fmt_fields(sub['type'], f)}")
-    _approve(sub_id, sub)
+          f"✅ Отредактировано и опубликовано\n\n{_fmt_fields(sub['type'], f)}")
 
 
-def _approve(sub_id, sub):
-    """Вакансии/резюме публикуются сразу бесплатно. Студия — просим оплатить
-    фиксированную цену подачи (submit_price), публикация будет после оплаты."""
-    if sub["type"] == "studio":
-        pricing = _deps["get_pricing"]()
-        price = pricing["submit_price"]
-        amount = _reserve_amount(sub["tg_user_id"], price)
-        db.reference(f"{_PENDING_PAY_REF}/{sub['tg_user_id']}").set({
-            "kind": "submit", "sub_id": sub_id, "price": price, "amount": amount,
-            "created_at": time.time(),
-        })
-        db.reference(f"{_SUBMISSIONS_REF}/{sub_id}").update({"status": "awaiting_payment"})
-        _send(WA_BOT_TOKEN, sub["tg_user_id"],
-              f"✅ Ваше объявление одобрено!\n\n"
-              f"Публикация стоит <b>{price} USDT</b> (разовая оплата, объявление остаётся навсегда).\n\n"
-              f"Переведите <b>{amount} USDT</b> в сети <b>TRC-20 (Tron)</b> на адрес:\n"
-              f"<code>{USDT_WALLET}</code>\n\n"
-              f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
-              f"После оплаты пришлите сюда одним сообщением хэш транзакции (TxID).")
-    else:
-        _publish_free(sub_id, sub)
-
-
-def _publish_free(sub_id, sub):
+def approve_free(sub_id):
+    """Публикует бесплатную заявку (вакансия/резюме). True при успехе."""
     ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "pending":
+        return False
     f = sub["fields"]
     if sub["type"] == "vacancy":
         db.reference(_deps["vacancies_ref"]).push({
@@ -391,6 +504,134 @@ def _publish_free(sub_id, sub):
         })
     ref.update({"status": "published"})
     _send(WA_BOT_TOKEN, sub["tg_user_id"], "✅ Ваше объявление одобрено и опубликовано на сайте!")
+    return True
+
+
+def reject_pending(sub_id):
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub:
+        return False
+    ref.update({"status": "rejected"})
+    _send(WA_BOT_TOKEN, sub["tg_user_id"], "❌ Ваше объявление отклонено модератором.")
+    return True
+
+
+# ─────────────────────────── студия: рассмотрение ПОСЛЕ оплаты ──────────────
+def _handle_review_callback(cb):
+    data = cb.get("data", "")
+    cb_id = cb.get("id")
+    chat_id = cb["message"]["chat"]["id"]
+    msg_id = cb["message"]["message_id"]
+    if chat_id != _admin_chat_id():
+        _answer_cb(WA_BOT_TOKEN, cb_id, "недоступно")
+        return
+    try:
+        action, sub_id = data.split(":", 1)
+    except ValueError:
+        _answer_cb(WA_BOT_TOKEN, cb_id, "ошибка")
+        return
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "awaiting_review":
+        _answer_cb(WA_BOT_TOKEN, cb_id, "заявка уже обработана")
+        return
+
+    if action == "pub":
+        ok, why = publish_studio(sub_id)
+        if ok:
+            _edit(WA_BOT_TOKEN, chat_id, msg_id, f"✅ Опубликовано\n\n{_fmt_fields('studio', sub['fields'])}")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Опубликовано" if ok else why)
+    elif action == "pdel":
+        reject_paid(sub_id)
+        _edit(WA_BOT_TOKEN, chat_id, msg_id, f"🗑 Удалено\n\n{_fmt_fields('studio', sub['fields'])}")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Удалено")
+    elif action == "pedit":
+        db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").set({"editing_review": sub_id, "msg_id": msg_id})
+        _send(WA_BOT_TOKEN, chat_id,
+              "✏️ Пришлите новое описание одним сообщением — объявление сразу опубликуется с ним.")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Жду текст")
+
+
+def _handle_review_edit_text(chat_id, text, state):
+    sub_id = state["editing_review"]
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").delete()
+    if not sub or sub.get("status") != "awaiting_review":
+        return
+    f = dict(sub.get("fields") or {})
+    f["desc"] = text[:600]
+    ref.child("fields").set(f)
+    ok, why = publish_studio(sub_id)
+    if ok:
+        _edit(WA_BOT_TOKEN, chat_id, state.get("msg_id"), f"✅ Отредактировано и опубликовано\n\n{_fmt_fields('studio', f)}")
+
+
+def save_submission_fields(sub_id, new_fields):
+    """Для веб-формы в админке — обновляет поля заявки, ещё ожидающей рассмотрения."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    if not ref.get():
+        return False
+    ref.child("fields").set(new_fields)
+    return True
+
+
+def publish_studio(sub_id):
+    """Публикует уже оплаченную студию в свободный слот. Вызывается и из
+    Telegram-кнопки, и из веб-формы админки. Возвращает (ok, причина_если_нет)."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "awaiting_review":
+        return False, "заявка уже обработана"
+    f = sub["fields"]
+    listings_ref = _deps["listings_ref"]
+    slot_key = _deps["slot_key"]
+    slot_count = _deps["slot_count"]
+    tier = sub.get("tier", "regular")
+    price = sub.get("price")
+
+    raw = db.reference(listings_ref).get() or {}
+    free_n = None
+    for n in range(1, slot_count + 1):
+        rec = raw.get(slot_key(n))
+        if not rec or not rec.get("name"):
+            free_n = n
+            break
+    if free_n is None:
+        return False, f"нет свободных мест из {slot_count}"
+
+    photo = f.get("photo", "")
+    expires_at = None if tier == "regular" else time.time() + (30 * 24 * 3600)
+    db.reference(f"{listings_ref}/{slot_key(free_n)}").set({
+        "name": f.get("name", ""), "city": f.get("city", ""), "desc": f.get("desc", ""),
+        "photos": [photo] if photo else [], "cover_photo": photo, "photo": photo,
+        "contacts": f.get("contact", ""), "phone": f.get("phone", ""), "url": f.get("url", ""),
+        "percent": f.get("percent", ""),
+        "social_telegram": f.get("social_telegram", ""), "social_instagram": f.get("social_instagram", ""),
+        "social_vk": f.get("social_vk", ""),
+        "status": "active", "boost_tier": tier, "boost_expires_at": expires_at,
+        "boost_price": None if tier == "regular" else price,
+        "clicks": 0, "owner_tg_id": sub["tg_user_id"],
+    })
+    ref.update({"status": "published", "published_slot": free_n})
+    _send(WA_BOT_TOKEN, sub["tg_user_id"], "🎉 Ваше объявление опубликовано на сайте!")
+    if tier == "regular":
+        _offer_boost(sub["tg_user_id"], free_n, f.get("city", ""))
+    return True, "ok"
+
+
+def reject_paid(sub_id):
+    """Удаляет уже оплаченную заявку без публикации (возврат — вручную, не
+    автоматом). Используется и из Telegram, и из веб-формы."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub:
+        return False
+    ref.update({"status": "rejected"})
+    _send(WA_BOT_TOKEN, sub["tg_user_id"],
+          "❌ Ваше объявление не прошло проверку и не будет опубликовано. По вопросам оплаты — напишите в поддержку.")
+    return True
 
 
 # ─────────────────────────── единая сумма-резерв (submit ИЛИ boost) ──────────────
@@ -419,44 +660,11 @@ def _reserve_amount(tg_user_id, price):
 def _boost_buttons(city, exclude_slot=None):
     pricing = _deps["get_pricing"]()
     listings_ref = _deps["listings_ref"]
-    slot_key = _deps["slot_key"]
-    slot_count = _deps["slot_count"]
     raw = db.reference(listings_ref).get() or {}
-    # ленивая проверка занятости лениво импортировать из app нельзя (циклический
-    # импорт) — считаем прямо тут, по тем же полям (boost_tier/boost_expires_at).
-    def eff_tier(rec):
-        t = rec.get("boost_tier") or "regular"
-        if t == "regular":
-            return "regular"
-        exp = rec.get("boost_expires_at")
-        if exp and time.time() > exp:
-            return "regular"
-        return t
-
-    def city_count(tier):
-        c = 0
-        for n in range(1, slot_count + 1):
-            if n == exclude_slot:
-                continue
-            rec = raw.get(slot_key(n))
-            if rec and rec.get("name") and rec.get("city") == city and eff_tier(rec) == tier:
-                c += 1
-        return c
-
-    def home_count():
-        c = 0
-        for n in range(1, slot_count + 1):
-            if n == exclude_slot:
-                continue
-            rec = raw.get(slot_key(n))
-            if rec and rec.get("name") and eff_tier(rec) == "home":
-                c += 1
-        return c
-
     buttons = []
     for t in BOOST_ORDER:
         cap = pricing[f"{t}_count"]
-        cnt = home_count() if t == "home" else city_count(t)
+        cnt = _tier_count(raw, t, city, exclude_slot=exclude_slot)
         if cnt >= cap:
             continue   # нет мест на этом уровне — не предлагаем
         price = pricing[f"{t}_price"]
@@ -592,47 +800,18 @@ def _verify_tx_onchain(txid, min_amount):
 
 
 def _finish_submit_payment(chat_id, pending, txid, paid):
+    """Оплата подачи подтверждена — НЕ публикуем сразу, отправляем на финальное
+    рассмотрение (Telegram-кнопки + видно в веб-админке)."""
     sub_id = pending["sub_id"]
     sub_ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
     sub = sub_ref.get()
     if not sub:
         return
-    f = sub["fields"]
-    listings_ref = _deps["listings_ref"]
-    slot_key = _deps["slot_key"]
-    slot_count = _deps["slot_count"]
-
-    raw = db.reference(listings_ref).get() or {}
-    free_n = None
-    for n in range(1, slot_count + 1):
-        rec = raw.get(slot_key(n))
-        if not rec or not rec.get("name"):
-            free_n = n
-            break
-
-    if free_n is None:
-        _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
-              f"⚠️ Оплата подачи пришла (tx {txid[:12]}), но свободных мест из {slot_count} не осталось — "
-              f"разберись вручную.\n\n{_fmt_fields('studio', f)}")
-        sub_ref.update({"status": "paid_no_slot", "txid": txid, "paid_amount": paid})
-        return
-
-    photo = f.get("photo", "")
-    db.reference(f"{listings_ref}/{slot_key(free_n)}").set({
-        "name": f.get("name", ""), "city": f.get("city", ""), "desc": f.get("desc", ""),
-        "photos": [photo] if photo else [], "cover_photo": photo, "photo": photo,
-        "contacts": f.get("contact", ""), "phone": f.get("phone", ""), "url": f.get("url", ""),
-        "percent": f.get("percent", ""),
-        "social_telegram": f.get("social_telegram", ""), "social_instagram": f.get("social_instagram", ""),
-        "social_vk": f.get("social_vk", ""),
-        "status": "active", "boost_tier": "regular", "boost_expires_at": None, "boost_price": None,
-        "clicks": 0, "owner_tg_id": chat_id,
-    })
-    sub_ref.update({"status": "published", "txid": txid, "paid_amount": paid, "published_slot": free_n})
-    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
-          f"💰 Оплата подачи подтверждена: ${paid}, tx {txid[:12]} — опубликовано (место #{free_n}).")
-    _send(WA_BOT_TOKEN, chat_id, "✅ Оплата подтверждена! Объявление опубликовано на сайте.")
-    _offer_boost(chat_id, free_n, f.get("city", ""))
+    sub_ref.update({"status": "awaiting_review", "txid": txid, "paid_amount": paid})
+    sub["status"] = "awaiting_review"
+    _send(WA_BOT_TOKEN, chat_id,
+          "✅ Оплата подтверждена! Объявление отправлено на финальную проверку — опубликуем в ближайшее время.")
+    _notify_admin_review(sub_id, sub)
 
 
 def _finish_boost_payment(chat_id, pending, txid, paid):

@@ -221,6 +221,23 @@ def api_featured():
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
+@app.route("/api/tier-availability", methods=["GET"])
+def api_tier_availability():
+    """Занятость платных уровней в городе — форма подачи на сайте показывает
+    это перед выбором тарифа (и предлагает лист ожидания на занятые)."""
+    city = (request.args.get("city") or "").strip()[:80]
+    raw = db.reference(_LISTINGS_REF).get() or {}
+    pricing = _get_pricing()
+    tiers = {}
+    for t in ("bronze", "silver", "gold"):
+        used = _city_boost_count(raw, city, t) if city else 0
+        cap = pricing[f"{t}_count"]
+        tiers[t] = {"cap": cap, "used": used, "available": used < cap, "price": pricing[f"{t}_price"]}
+    home_used = _home_boost_count(raw)
+    home_cap = pricing["home_count"]
+    tiers["home"] = {"cap": home_cap, "used": home_used, "available": home_used < home_cap, "price": pricing["home_price"]}
+    return jsonify({"ok": True, "city": city, "submit_price": pricing["submit_price"], "tiers": tiers})
+
 @app.route("/api/board", methods=["GET"])
 def api_board():
     """Вакансии, добавленные вручную из админки — слой поверх board.json,
@@ -324,13 +341,31 @@ def admin_dashboard():
             continue
         catalog_studios.append({"key": key, **rec})
 
+    # Рассмотрение новых: студии, уже оплаченные и ждущие публикации/правки/
+    # удаления, + бесплатные вакансии/резюме, ждущие одобрения. То же самое,
+    # что приходит в Telegram — тут просто дублируется веб-интерфейсом.
+    raw_sub = db.reference(moderation._SUBMISSIONS_REF).get() or {}
+    review_studios, review_free = [], []
+    for key, rec in raw_sub.items():
+        if not isinstance(rec, dict):
+            continue
+        item = {"key": key, **rec}
+        if rec.get("type") == "studio" and rec.get("status") == "awaiting_review":
+            review_studios.append(item)
+        elif rec.get("type") in ("vacancy", "resume") and rec.get("status") == "pending":
+            review_free.append(item)
+    review_studios.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    review_free.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
                            catalog_studios=catalog_studios, catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
-                           studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS)
+                           studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS,
+                           review_studios=review_studios, review_free=review_free,
+                           moderation_tier_label=moderation.TIER_LABEL)
 
 @app.route("/admin/pricing/save", methods=["POST"])
 @_require_admin
@@ -399,6 +434,11 @@ def admin_slot_save(n):
     existing = ref.get() or {}
     rec["clicks"] = int(existing.get("clicks", 0))
     ref.set(rec)
+
+    old_tier = existing.get("boost_tier")
+    if old_tier in ("bronze", "silver", "gold", "home") and old_tier != boost_tier:
+        moderation.notify_waitlist(existing.get("city", ""), old_tier)
+
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>/extend", methods=["POST"])
@@ -419,14 +459,24 @@ def admin_slot_hide(n):
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
     rec = ref.get()
     if rec:
-        rec["status"] = "hidden" if rec.get("status") == "active" else "active"
+        was_active = rec.get("status") == "active"
+        rec["status"] = "hidden" if was_active else "active"
         ref.set(rec)
+        tier = rec.get("boost_tier")
+        if was_active and tier in ("bronze", "silver", "gold", "home"):
+            moderation.notify_waitlist(rec.get("city", ""), tier)
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>/delete", methods=["POST"])
 @_require_admin
 def admin_slot_delete(n):
-    db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").delete()
+    ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
+    rec = ref.get()
+    ref.delete()
+    if rec:
+        tier = rec.get("boost_tier")
+        if tier in ("bronze", "silver", "gold", "home"):
+            moderation.notify_waitlist(rec.get("city", ""), tier)
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>/move", methods=["POST"])
@@ -445,6 +495,52 @@ def admin_slot_move(n):
         dst_ref.set(rec)
         src_ref.delete()
     return redirect(url_for("admin_dashboard"))
+
+
+# ─────────────────────────── Рассмотрение новых ──────────────
+# Та же очередь, что приходит в Telegram (оплаченные студии + бесплатные
+# вакансии/резюме) — здесь дублируется веб-формой, действия идут через те же
+# публичные функции moderation.py, так что состояние всегда согласовано вне
+# зависимости от того, откуда админ нажал: из ТГ или из админки.
+
+@app.route("/admin/review/<sub_id>/publish", methods=["POST"])
+@_require_admin
+def admin_review_publish(sub_id):
+    moderation.publish_studio(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review/<sub_id>/save", methods=["POST"])
+@_require_admin
+def admin_review_save(sub_id):
+    ref = db.reference(f"{moderation._SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get() or {}
+    fields = dict(sub.get("fields") or {})
+    for key in fields.keys():
+        if key in request.form:
+            fields[key] = request.form.get(key, "").strip()
+    moderation.save_submission_fields(sub_id, fields)
+    if request.form.get("publish") == "on":
+        moderation.publish_studio(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review/<sub_id>/delete", methods=["POST"])
+@_require_admin
+def admin_review_delete(sub_id):
+    moderation.reject_paid(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review-free/<sub_id>/approve", methods=["POST"])
+@_require_admin
+def admin_review_free_approve(sub_id):
+    moderation.approve_free(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review-free/<sub_id>/reject", methods=["POST"])
+@_require_admin
+def admin_review_free_reject(sub_id):
+    moderation.reject_pending(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
 
 @app.route("/admin/vacancy/save", methods=["POST"])
 @_require_admin

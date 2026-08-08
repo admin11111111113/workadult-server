@@ -161,6 +161,86 @@
 <div class="content">
 
   <div class="section-block">
+    <h2>🆕 Рассмотрение новых{% if review_studios or review_free %} <span class="badge active">{{ (review_studios|length) + (review_free|length) }}</span>{% endif %}</h2>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Оплаченные студии (после оплаты — опубликовать/поправить/удалить) и бесплатные вакансии/резюме, ждущие одобрения. То же самое приходит в Telegram — можно обработать отсюда или оттуда, состояние общее.</div>
+
+    {% if not review_studios and not review_free %}
+    <div class="cat-empty">Нет новых заявок на рассмотрении</div>
+    {% endif %}
+
+    {% if review_studios %}
+    <div style="font-size:13px;color:#9aa0aa;margin:8px 0 12px;font-weight:700">💰 Студии — оплачено, ждёт публикации</div>
+    <div class="cat-grid">
+      {% for s in review_studios %}
+      {% set f = s.fields or {} %}
+      <div class="cat-card {% if s.tier in ('gold','silver','bronze') %}tier-{{ s.tier }}{% endif %}">
+        <div class="cat-badge {% if s.tier in ('gold','silver','home') %}premium{% endif %}">
+          <span>{{ moderation_tier_label.get(s.tier, s.tier) }} · ${{ s.price }}</span>
+          <span>{{ s.created_at or '' }}</span>
+        </div>
+        <div class="cat-name">{{ f.name }}</div>
+        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
+        <div class="cat-desc">{{ f.desc }}</div>
+        <div class="cat-contacts">{{ f.contact }}{% if f.phone %} · {{ f.phone }}{% endif %}</div>
+        {% if f.url %}<div class="cat-url"><a href="{{ f.url }}" target="_blank">{{ f.url }}</a></div>{% endif %}
+        <div class="cat-actions">
+          <form method="post" action="/admin/review/{{ s.key }}/publish" style="display:inline">
+            <button class="btn btn-save" type="submit">✅ Опубликовать</button>
+          </form>
+          <button class="btn btn-move" type="button" onclick="toggleSlot('rev-{{ s.key }}')">✏️ Править</button>
+          <form method="post" action="/admin/review/{{ s.key }}/delete" style="display:inline" onsubmit="return confirm('Удалить заявку без публикации? Оплата не возвращается автоматически.')">
+            <button class="btn btn-delete" type="submit">🗑 Удалить</button>
+          </form>
+        </div>
+        <div class="slot-body" id="rev-{{ s.key }}" style="margin-top:12px">
+          <form method="post" action="/admin/review/{{ s.key }}/save">
+            <div class="form-grid">
+              <div class="form-group"><label>Название</label><input name="name" value="{{ f.name }}"></div>
+              <div class="form-group"><label>Город</label><input name="city" value="{{ f.city }}"></div>
+              <div class="form-group"><label>% выплат</label><input name="percent" value="{{ f.percent }}"></div>
+              <div class="form-group"><label>Контакт</label><input name="contact" value="{{ f.contact }}"></div>
+              <div class="form-group"><label>Телефон</label><input name="phone" value="{{ f.phone }}"></div>
+              <div class="form-group"><label>Сайт</label><input name="url" value="{{ f.url }}"></div>
+              <div class="form-group full"><label>Описание</label><textarea name="desc">{{ f.desc }}</textarea></div>
+            </div>
+            <div class="actions-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9aa0aa"><input type="checkbox" name="publish" checked> и сразу опубликовать</label>
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if review_free %}
+    <div style="font-size:13px;color:#9aa0aa;margin:24px 0 12px;font-weight:700">💼 Вакансии / резюме — бесплатно, ждёт одобрения</div>
+    <div class="slots-grid">
+      {% for s in review_free %}
+      {% set f = s.fields or {} %}
+      <div class="slot-card">
+        <div class="slot-header" style="cursor:default">
+          <div>
+            <span class="slot-num">{{ 'Вакансия' if s.type == 'vacancy' else 'Резюме' }}{% if f.title %}: {{ f.title }}{% elif f.experience %}: {{ f.experience }}{% endif %}</span>
+            <div style="font-size:12px;color:#bbb;margin-top:4px">{% if f.org %}{{ f.org }} · {% endif %}{% if f.salary %}{{ f.salary }} · {% endif %}{{ f.contact }}</div>
+          </div>
+        </div>
+        <div class="actions-row" style="padding:0 16px 16px">
+          <form method="post" action="/admin/review-free/{{ s.key }}/approve" style="display:inline">
+            <button class="btn btn-save" type="submit">✅ Одобрить</button>
+          </form>
+          <form method="post" action="/admin/review-free/{{ s.key }}/reject" style="display:inline" onsubmit="return confirm('Отклонить заявку?')">
+            <button class="btn btn-delete" type="submit">✖ Отклонить</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="section-block">
     <div class="stats-grid">
       <div class="stat-card">
         <b>{{ occupied }}</b>
