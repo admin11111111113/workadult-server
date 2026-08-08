@@ -38,11 +38,9 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 _LISTINGS_REF = "/workadult_studios"
 _VACANCIES_REF = "/workadult_vacancies"
-_CATALOG_REF = "/workadult_catalog_studios"
 _PRICING_REF = "/workadult_pricing"
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
-CATALOG_FIELDS = ("name", "city", "percent", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude")
 CATALOG_FMT_LABELS = {"studio": "В студии", "home": "Из дома", "pair": "Парой",
                       "guys": "Для парней", "nonnude": "Non Nude"}
@@ -254,23 +252,6 @@ def api_board():
         vacancies.append(item)
     return jsonify({"ok": True, "vacancies": vacancies})
 
-@app.route("/api/catalog", methods=["GET"])
-def api_catalog():
-    """Студии, добавленные вручную из админки — слой поверх studios.json,
-    самоподача через workadult-bots (Telegram + модерация) не трогается."""
-    raw = db.reference(_CATALOG_REF).get() or {}
-    studios = []
-    for key, rec in raw.items():
-        if not isinstance(rec, dict):
-            continue
-        item = {f: rec.get(f, "") for f in CATALOG_FIELDS}
-        item["id"] = key
-        item["formats"] = [f for f in CATALOG_FORMATS if rec.get("fmt_" + f)]
-        item["verified"] = bool(rec.get("verified"))
-        item["premium"] = bool(rec.get("premium"))
-        studios.append(item)
-    return jsonify({"ok": True, "studios": studios})
-
 @app.route("/api/click/<int:n>", methods=["POST"])
 def api_click(n):
     if not (1 <= n <= SLOT_COUNT):
@@ -334,13 +315,6 @@ def admin_dashboard():
     vac_top5 = sorted((v for v in vacancies if v.get("pinned")),
                       key=lambda v: v.get("date") or "", reverse=True)[:5]
 
-    raw_cat = db.reference(_CATALOG_REF).get() or {}
-    catalog_studios = []
-    for key, rec in raw_cat.items():
-        if not isinstance(rec, dict):
-            continue
-        catalog_studios.append({"key": key, **rec})
-
     # Рассмотрение новых: студии, уже оплаченные и ждущие публикации/правки/
     # удаления, + бесплатные вакансии/резюме, ждущие одобрения. То же самое,
     # что приходит в Telegram — тут просто дублируется веб-интерфейсом.
@@ -360,7 +334,7 @@ def admin_dashboard():
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
-                           catalog_studios=catalog_studios, catalog_formats=CATALOG_FORMATS,
+                           catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
                            studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS,
@@ -669,36 +643,6 @@ def admin_vacancy_save():
 @_require_admin
 def admin_vacancy_delete(key):
     db.reference(_VACANCIES_REF).child(key).delete()
-    return redirect(url_for("admin_dashboard"))
-
-@app.route("/admin/catalog/save", methods=["POST"])
-@_require_admin
-def admin_catalog_save():
-    """Добавить новую студию в каталог (без key) или отредактировать (с key)."""
-    key = request.form.get("key", "").strip()
-    ref_root = db.reference(_CATALOG_REF)
-    rec = {
-        "name":     request.form.get("name", "").strip()[:120],
-        "city":     request.form.get("city", "").strip()[:80],
-        "percent":  request.form.get("percent", "").strip()[:60],
-        "desc":     request.form.get("desc", "").strip()[:600],
-        "contact":  request.form.get("contact", "").strip()[:200],
-        "verified": request.form.get("verified") == "on",
-        "premium":  request.form.get("premium") == "on",
-    }
-    picked = request.form.getlist("fmt")
-    for f in CATALOG_FORMATS:
-        rec["fmt_" + f] = f in picked
-    if key:
-        ref_root.child(key).set(rec)
-    else:
-        ref_root.push(rec)
-    return redirect(url_for("admin_dashboard"))
-
-@app.route("/admin/catalog/<key>/delete", methods=["POST"])
-@_require_admin
-def admin_catalog_delete(key):
-    db.reference(_CATALOG_REF).child(key).delete()
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/api/traffic")
