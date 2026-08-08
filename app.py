@@ -70,21 +70,26 @@ DEMO_DEFAULTS = {
     ],
 }
 
+def _as_list(v):
+    """Firebase хранит массив как список, но если сохранён «дырявый» (не с
+    индекса 0) — как объект с ключами-номерами; приводим к списку в обоих
+    случаях."""
+    if isinstance(v, list):
+        return v
+    if isinstance(v, dict):
+        return [v[k] for k in sorted(v, key=lambda x: int(x) if str(x).isdigit() else 0)]
+    return []
+
 def _get_demo():
-    raw = db.reference(_DEMO_REF).get() or {}
-    out = {"studios": [], "vacancies": []}
-    raw_studios = raw.get("studios") or []
-    raw_vac = raw.get("vacancies") or []
-    for i in range(3):
-        s = dict(DEMO_DEFAULTS["studios"][i])
-        if i < len(raw_studios) and isinstance(raw_studios[i], dict):
-            s.update({k: v for k, v in raw_studios[i].items() if v})
-        out["studios"].append(s)
-        v = dict(DEMO_DEFAULTS["vacancies"][i])
-        if i < len(raw_vac) and isinstance(raw_vac[i], dict):
-            v.update({k: val for k, val in raw_vac[i].items() if val})
-        out["vacancies"].append(v)
-    return out
+    """Список произвольной длины — админ может добавлять/убирать заглушки
+    свободно. Пока никто ничего не сохранял (узла ещё нет) — 3 дефолтных."""
+    raw = db.reference(_DEMO_REF).get()
+    if not raw:
+        return {"studios": [dict(s) for s in DEMO_DEFAULTS["studios"]],
+                "vacancies": [dict(v) for v in DEMO_DEFAULTS["vacancies"]]}
+    studios = [s for s in _as_list(raw.get("studios")) if isinstance(s, dict)]
+    vacancies = [v for v in _as_list(raw.get("vacancies")) if isinstance(v, dict)]
+    return {"studios": studios, "vacancies": vacancies}
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude")
@@ -428,11 +433,17 @@ def admin_pricing_save():
 @_require_admin
 def admin_demo_save():
     """Раздельные формы (вкладки «Каталог студий» / «Вакансии») шлют только
-    свою половину полей — вторую половину не трогаем, берём как есть."""
+    свою половину полей — вторую половину не трогаем, берём как есть.
+    Количество карточек свободное (add/remove на клиенте), не фиксировано."""
     current = _get_demo()
-    if "demo_studio_name_0" in request.form:
+    MAX_DEMO_ITEMS = 30
+    if "demo_studio_count" in request.form:
+        try:
+            n = min(MAX_DEMO_ITEMS, max(0, int(request.form.get("demo_studio_count", 0))))
+        except ValueError:
+            n = 0
         studios = []
-        for i in range(3):
+        for i in range(n):
             studios.append({
                 "name": request.form.get(f"demo_studio_name_{i}", "").strip()[:120],
                 "city": request.form.get(f"demo_studio_city_{i}", "").strip()[:80],
@@ -443,9 +454,13 @@ def admin_demo_save():
             })
     else:
         studios = current["studios"]
-    if "demo_vac_org_0" in request.form:
+    if "demo_vac_count" in request.form:
+        try:
+            n = min(MAX_DEMO_ITEMS, max(0, int(request.form.get("demo_vac_count", 0))))
+        except ValueError:
+            n = 0
         vacancies = []
-        for i in range(3):
+        for i in range(n):
             vacancies.append({
                 "org": request.form.get(f"demo_vac_org_{i}", "").strip()[:120],
                 "title": request.form.get(f"demo_vac_title_{i}", "").strip()[:160],

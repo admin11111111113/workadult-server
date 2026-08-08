@@ -361,22 +361,16 @@
       </form>
     </div>
 
-    <details style="margin-bottom:24px">
-      <summary style="cursor:pointer;color:#9aa0aa;font-size:13px;font-weight:700">🎭 Демо-заглушки (показываются на сайте, только пока вакансий нет)</summary>
-      <div style="font-size:12.5px;color:#666;margin:10px 0 14px">Эти 3 карточки сайт показывает вместо пустой доски вакансий. Как только появится хотя бы одна настоящая — заглушки исчезнут сами, редактировать их отдельно не обязательно.</div>
-      <form method="post" action="/admin/demo/save">
-        {% for v in demo.vacancies %}
-        <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
-          <div class="form-group"><label>Студия/компания</label><input name="demo_vac_org_{{ loop.index0 }}" value="{{ v.org }}"></div>
-          <div class="form-group"><label>Вакансия</label><input name="demo_vac_title_{{ loop.index0 }}" value="{{ v.title }}"></div>
-          <div class="form-group"><label>Зарплата/условия</label><input name="demo_vac_salary_{{ loop.index0 }}" value="{{ v.salary }}"></div>
-          <div class="form-group"><label>Контакт</label><input name="demo_vac_contact_{{ loop.index0 }}" value="{{ v.contact }}"></div>
-          <div class="form-group full"><label>Описание</label><textarea name="demo_vac_desc_{{ loop.index0 }}">{{ v.desc }}</textarea></div>
-        </div>
-        {% endfor %}
-        <button class="btn btn-save" type="submit">💾 Сохранить заглушки</button>
-      </form>
-    </details>
+    <div style="margin-bottom:28px">
+      <div style="font-size:13px;color:#9aa0aa;font-weight:700;margin-bottom:6px">🎭 Демо-заглушки — показываются на сайте вместо доски, пока настоящих вакансий нет</div>
+      <div style="font-size:12.5px;color:#666;margin-bottom:12px">Появится хотя бы одна настоящая вакансия — заглушки исчезнут сами. Можно добавлять/убирать сколько угодно, вплоть до нуля.</div>
+      <div class="vboard-row" id="demoVacPreview"></div>
+      <div id="demoVacRows" style="margin-top:16px"></div>
+      <div class="actions-row" style="margin-top:6px">
+        <button type="button" class="btn btn-move" onclick="addDemoVacRow()">+ Добавить заглушку</button>
+        <button type="button" class="btn btn-save" onclick="saveDemoVac()">💾 Сохранить заглушки</button>
+      </div>
+    </div>
 
     <div class="vboard-preview-label">Так последние вакансии выглядят на главной сайта — клик по карточке открывает редактирование</div>
     {% if vac_top5 %}
@@ -496,23 +490,16 @@
       </form>
     </div>
 
-    <details style="margin-bottom:24px">
-      <summary style="cursor:pointer;color:#9aa0aa;font-size:13px;font-weight:700">🎭 Демо-заглушки (показываются на сайте, только пока студий нет)</summary>
-      <div style="font-size:12.5px;color:#666;margin:10px 0 14px">Эти 3 карточки сайт показывает в каталоге вместо пустого списка. Как только появится хотя бы одна настоящая студия — заглушки исчезнут сами, редактировать их отдельно не обязательно.</div>
-      <form method="post" action="/admin/demo/save">
-        {% for s in demo.studios %}
-        <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
-          <div class="form-group"><label>Название студии</label><input name="demo_studio_name_{{ loop.index0 }}" value="{{ s.name }}"></div>
-          <div class="form-group"><label>Город</label><input name="demo_studio_city_{{ loop.index0 }}" value="{{ s.city }}"></div>
-          <div class="form-group"><label>Процент</label><input name="demo_studio_percent_{{ loop.index0 }}" value="{{ s.percent }}"></div>
-          <div class="form-group"><label>Контакт</label><input name="demo_studio_contact_{{ loop.index0 }}" value="{{ s.contact }}"></div>
-          <div class="form-group full"><label>Описание</label><textarea name="demo_studio_desc_{{ loop.index0 }}">{{ s.desc }}</textarea></div>
-          <div class="form-group full"><label>Фото (ссылка)</label><input name="demo_studio_photo_{{ loop.index0 }}" value="{{ s.photo }}"></div>
-        </div>
-        {% endfor %}
-        <button class="btn btn-save" type="submit">💾 Сохранить заглушки</button>
-      </form>
-    </details>
+    <div style="margin-bottom:28px">
+      <div style="font-size:13px;color:#9aa0aa;font-weight:700;margin-bottom:6px">🎭 Демо-заглушки — показываются в каталоге вместо пустого списка, пока настоящих студий нет</div>
+      <div style="font-size:12.5px;color:#666;margin-bottom:12px">Появится хотя бы одна настоящая студия — заглушки исчезнут сами. Можно добавлять/убирать сколько угодно, вплоть до нуля.</div>
+      <div class="cat-grid" id="demoStudioPreview"></div>
+      <div id="demoStudioRows" style="margin-top:16px"></div>
+      <div class="actions-row" style="margin-top:6px">
+        <button type="button" class="btn btn-move" onclick="addDemoStudioRow()">+ Добавить заглушку</button>
+        <button type="button" class="btn btn-save" onclick="saveDemoStudios()">💾 Сохранить заглушки</button>
+      </div>
+    </div>
 
     <div class="add-card" id="studioAddCard">
       <div id="studioAddFields"></div>
@@ -626,6 +613,135 @@ function showTab(name) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
 }
 showTab('overview');
+
+/* ---------- Демо-заглушки: свободный список (add/remove), сразу видно и превью, и поля ---------- */
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = (s == null ? '' : String(s));
+  return d.innerHTML;
+}
+
+let DEMO_VAC_STATE = {{ demo.vacancies | tojson }};
+function demoVacCardHtml(v) {
+  return '<div class="vboard-card">' +
+    (v.org ? '<div class="org">' + escHtml(v.org) + '</div>' : '') +
+    '<div class="title">' + escHtml(v.title || '') + '</div>' +
+    (v.salary ? '<div class="sal">' + escHtml(v.salary) + '</div>' : '') +
+    '<div class="ct">заглушка</div></div>';
+}
+function renderDemoVac() {
+  document.getElementById('demoVacPreview').innerHTML = DEMO_VAC_STATE.length
+    ? DEMO_VAC_STATE.map(demoVacCardHtml).join('')
+    : '<div class="cat-empty">Заглушек нет — при пустой доске сайт покажет «вакансий пока нет»</div>';
+  document.getElementById('demoVacRows').innerHTML = DEMO_VAC_STATE.map((v, i) => `
+    <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
+      <div class="form-group"><label>Студия/компания</label><input data-idx="${i}" data-f="org" value="${escHtml(v.org)}"></div>
+      <div class="form-group"><label>Вакансия</label><input data-idx="${i}" data-f="title" value="${escHtml(v.title)}"></div>
+      <div class="form-group"><label>Зарплата/условия</label><input data-idx="${i}" data-f="salary" value="${escHtml(v.salary)}"></div>
+      <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(v.contact)}"></div>
+      <div class="form-group full"><label>Описание</label><textarea data-idx="${i}" data-f="desc">${escHtml(v.desc)}</textarea></div>
+      <div class="form-group full"><button type="button" class="btn btn-delete" onclick="removeDemoVacRow(${i})">✕ Убрать эту заглушку</button></div>
+    </div>`).join('');
+  document.querySelectorAll('#demoVacRows [data-f]').forEach(el => {
+    el.addEventListener('input', () => {
+      DEMO_VAC_STATE[+el.dataset.idx][el.dataset.f] = el.value;
+      renderDemoVac_previewOnly();
+    });
+  });
+}
+function renderDemoVac_previewOnly() {
+  document.getElementById('demoVacPreview').innerHTML = DEMO_VAC_STATE.length
+    ? DEMO_VAC_STATE.map(demoVacCardHtml).join('')
+    : '<div class="cat-empty">Заглушек нет — при пустой доске сайт покажет «вакансий пока нет»</div>';
+}
+function addDemoVacRow() {
+  DEMO_VAC_STATE.push({org: '', title: '', salary: '', desc: '', contact: ''});
+  renderDemoVac();
+}
+function removeDemoVacRow(i) {
+  DEMO_VAC_STATE.splice(i, 1);
+  renderDemoVac();
+}
+function saveDemoVac() {
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/demo/save';
+  const countInp = document.createElement('input');
+  countInp.type = 'hidden'; countInp.name = 'demo_vac_count'; countInp.value = DEMO_VAC_STATE.length;
+  form.appendChild(countInp);
+  DEMO_VAC_STATE.forEach((v, i) => {
+    ['org', 'title', 'salary', 'desc', 'contact'].forEach(f => {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = `demo_vac_${f}_${i}`; inp.value = v[f] || '';
+      form.appendChild(inp);
+    });
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+renderDemoVac();
+
+let DEMO_STUDIO_STATE = {{ demo.studios | tojson }};
+function demoStudioCardHtml(s) {
+  const cover = s.photo || '';
+  return '<div class="cat-card">' +
+    '<div class="cat-badge"><span class="badge-tier regular">заглушка</span></div>' +
+    (cover ? `<img class="cat-photo" src="${escHtml(cover)}" alt="" onerror="this.style.display='none'">` : '') +
+    '<div class="cat-name">' + escHtml(s.name || '') + '</div>' +
+    '<div class="cat-city">📍 ' + escHtml(s.city || '') + (s.percent ? ' · 💰 ' + escHtml(s.percent) : '') + '</div>' +
+    (s.desc ? '<div class="cat-desc">' + escHtml(s.desc) + '</div>' : '') +
+    '</div>';
+}
+function renderDemoStudioPreview() {
+  document.getElementById('demoStudioPreview').innerHTML = DEMO_STUDIO_STATE.length
+    ? DEMO_STUDIO_STATE.map(demoStudioCardHtml).join('')
+    : '<div class="cat-empty">Заглушек нет — при пустом каталоге сайт покажет «студий пока нет»</div>';
+}
+function renderDemoStudios() {
+  renderDemoStudioPreview();
+  document.getElementById('demoStudioRows').innerHTML = DEMO_STUDIO_STATE.map((s, i) => `
+    <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
+      <div class="form-group"><label>Название студии</label><input data-idx="${i}" data-f="name" value="${escHtml(s.name)}"></div>
+      <div class="form-group"><label>Город</label><input data-idx="${i}" data-f="city" value="${escHtml(s.city)}"></div>
+      <div class="form-group"><label>Процент</label><input data-idx="${i}" data-f="percent" value="${escHtml(s.percent)}"></div>
+      <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(s.contact)}"></div>
+      <div class="form-group full"><label>Описание</label><textarea data-idx="${i}" data-f="desc">${escHtml(s.desc)}</textarea></div>
+      <div class="form-group full"><label>Фото (ссылка)</label><input data-idx="${i}" data-f="photo" value="${escHtml(s.photo)}"></div>
+      <div class="form-group full"><button type="button" class="btn btn-delete" onclick="removeDemoStudioRow(${i})">✕ Убрать эту заглушку</button></div>
+    </div>`).join('');
+  document.querySelectorAll('#demoStudioRows [data-f]').forEach(el => {
+    el.addEventListener('input', () => {
+      DEMO_STUDIO_STATE[+el.dataset.idx][el.dataset.f] = el.value;
+      renderDemoStudioPreview();
+    });
+  });
+}
+function addDemoStudioRow() {
+  DEMO_STUDIO_STATE.push({name: '', city: '', percent: '', desc: '', contact: '', photo: ''});
+  renderDemoStudios();
+}
+function removeDemoStudioRow(i) {
+  DEMO_STUDIO_STATE.splice(i, 1);
+  renderDemoStudios();
+}
+function saveDemoStudios() {
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/demo/save';
+  const countInp = document.createElement('input');
+  countInp.type = 'hidden'; countInp.name = 'demo_studio_count'; countInp.value = DEMO_STUDIO_STATE.length;
+  form.appendChild(countInp);
+  DEMO_STUDIO_STATE.forEach((s, i) => {
+    ['name', 'city', 'percent', 'desc', 'contact', 'photo'].forEach(f => {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = `demo_studio_${f}_${i}`; inp.value = s[f] || '';
+      form.appendChild(inp);
+    });
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+renderDemoStudios();
 
 /* ---------- Вакансии ---------- */
 function toggleVacAddCard() {
