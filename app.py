@@ -564,10 +564,13 @@ def admin_seed_test_studios():
                 break
             n = free_slots[i]; i += 1
             boosted = tier != "regular"
+            # Случайная (но детерминированная) картинка-заглушка — чтобы посмотреть,
+            # как рамка тира выглядит поверх реального фото, а не пустого плейсхолдера.
+            photo_url = f"https://picsum.photos/seed/wa-test-{n}/500/500"
             rec = {
                 "name": name, "city": city,
                 "desc": "Тестовая карточка для проверки вёрстки — будет удалена.",
-                "photos": [], "cover_photo": "", "photo": "",
+                "photos": [photo_url], "cover_photo": photo_url, "photo": photo_url,
                 "contacts": "@test_" + str(n), "phone": "+7(900) 000-%02d-%02d" % (n % 100, (n * 7) % 100),
                 "url": "", "percent": percent,
                 "social_telegram": "", "social_instagram": "", "social_vk": "",
