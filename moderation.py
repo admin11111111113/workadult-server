@@ -274,7 +274,8 @@ def _submit_studio():
         "contact": (form.get("contact") or "").strip()[:200],
         "phone": (form.get("phone") or "").strip()[:40],
         "url": (form.get("url") or "").strip()[:300],
-        "photo": (form.get("logo") or form.get("photo") or "").strip()[:500],   # логотип — 800×500
+        # логотип/фото — 800×500, кроп на клиенте; или data:URI (JPEG ~60-190KB), или ссылка
+        "photo": (form.get("logo") or form.get("photo") or "").strip()[:400000],
         "percent": (form.get("percent") or "").strip()[:60],
         "social_telegram": (form.get("social_telegram") or "").strip()[:120],
         "social_instagram": (form.get("social_instagram") or "").strip()[:120],
