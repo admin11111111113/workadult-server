@@ -20,14 +20,14 @@
 проверка — ТЕМ ЖЕ механизмом: он-чейн сверка через TronGrid по контракту
 USDT-TRC20, допуск ±3 USDT, идемпотентность по txid.
 
-Два бота (разные роли, разные токены):
-  WA_BOT_TOKEN       — тот же бот, что в Telegram Login Widget на сайте.
-                       Пишет ПОДАТЕЛЮ (оплата, буст, статус публикации).
-                       Нужен, т.к. слать сообщения можно только тому, кто
-                       хоть раз открывал чат именно с этим ботом — а Login
-                       Widget как раз обеспечивает это открытие.
-  WA_ADMIN_BOT_TOKEN — отдельный бот в админ-группу/канал WA_ADMIN_CHAT_ID.
-                       Пишет АДМИНУ заявки на модерацию с кнопками.
+Один бот на всё (WA_BOT_TOKEN) — тот же, что в Telegram Login Widget на
+сайте. Пишет и подателю (оплата, буст, статус), и админу (заявки на
+модерацию) в его личный чат WA_ADMIN_CHAT_ID. Один бот, а не два, потому
+что слать сообщения можно только тому, кто хоть раз открывал чат именно
+с этим ботом — а Login Widget это обеспечивает только для одного бота.
+Раз бот общий, действия админа (appr/edit/rej) ПРОВЕРЯЮТСЯ по chat_id —
+иначе любой пользователь того же бота мог бы подделать callback_data и
+одобрить/отклонить чужую заявку.
 
 Упрощение (осознанное, не баг): у пользователя в один момент времени только
 ОДИН активный платёж (submit ИЛИ boost) — новый вызов тарифных кнопок
@@ -42,11 +42,17 @@ from firebase_admin import db
 from flask import request, jsonify
 
 WA_BOT_TOKEN = os.environ.get("WA_BOT_TOKEN", "").strip()
-WA_ADMIN_BOT_TOKEN = os.environ.get("WA_ADMIN_BOT_TOKEN", "").strip()
 WA_ADMIN_CHAT_ID = os.environ.get("WA_ADMIN_CHAT_ID", "").strip()
 # Секрет для проверки заголовка X-Telegram-Bot-Api-Secret-Token — без него
-# кто угодно мог бы POST-нуть на /tg/webhook/* поддельное «одобрение».
+# кто угодно мог бы POST-нуть на /tg/webhook поддельное «одобрение».
 WA_WEBHOOK_SECRET = os.environ.get("WA_WEBHOOK_SECRET", "").strip()
+
+
+def _admin_chat_id():
+    try:
+        return int(WA_ADMIN_CHAT_ID)
+    except (TypeError, ValueError):
+        return None
 
 USDT_WALLET = os.environ.get("USDT_WALLET", "").strip()
 TRONGRID_API_KEY = os.environ.get("TRONGRID_API_KEY", "").strip()
@@ -75,8 +81,7 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     app.add_url_rule("/api/submit-studio", "submit_studio", _submit_studio, methods=["POST"])
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
-    app.add_url_rule("/tg/webhook/admin", "tg_webhook_admin", _webhook_admin, methods=["POST"])
-    app.add_url_rule("/tg/webhook/user", "tg_webhook_user", _webhook_user, methods=["POST"])
+    app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
 
 
 # ─────────────────────────── Telegram Bot API helpers ──────────────
@@ -160,7 +165,7 @@ def _new_submission(sub_type, fields, auth):
          {"text": "✏️ Редактировать", "callback_data": f"edit:{sub_id}"}],
         [{"text": "❌ Отклонить", "callback_data": f"rej:{sub_id}"}],
     ]
-    res = _send(WA_ADMIN_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
+    res = _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
     msg_id = (res.get("result") or {}).get("message_id")
     if msg_id:
         ref.child("admin_chat_msg_id").set(msg_id)
@@ -228,22 +233,40 @@ def _submit_resume():
     return jsonify({"ok": True})
 
 
-# ─────────────────────────── вебхук: админ-бот ──────────────
-def _webhook_admin():
+# ─────────────────────────── единый вебхук (один бот) ──────────────
+def _webhook():
     if not _check_secret():
         return jsonify({"ok": False}), 403
     update = request.get_json(force=True, silent=True) or {}
     try:
         cb = update.get("callback_query")
         if cb:
-            _handle_admin_callback(cb)
+            data = cb.get("data", "")
+            if data.startswith(("appr:", "edit:", "rej:")):
+                _handle_admin_callback(cb)
+            elif data.startswith("boostpick:"):
+                _handle_user_callback(cb)
             return jsonify({"ok": True})
         msg = update.get("message")
         if msg:
-            _handle_admin_message(msg)
+            _handle_message(msg)
     except Exception as e:
-        print(f"[moderation] admin webhook error: {e}")
+        print(f"[moderation] webhook error: {e}")
     return jsonify({"ok": True})
+
+
+def _handle_message(msg):
+    chat_id = msg["chat"]["id"]
+    text = (msg.get("text") or "").strip()
+    if not text:
+        return
+    # Админ пишет текст правки — приоритетно, только в его личном чате.
+    if chat_id == _admin_chat_id():
+        state = db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").get()
+        if state and state.get("editing"):
+            _handle_admin_edit_text(chat_id, text, state)
+            return
+    _handle_user_message(chat_id, text)
 
 
 def _handle_admin_callback(cb):
@@ -251,46 +274,44 @@ def _handle_admin_callback(cb):
     cb_id = cb.get("id")
     chat_id = cb["message"]["chat"]["id"]
     msg_id = cb["message"]["message_id"]
+    if chat_id != _admin_chat_id():
+        # Общий бот — без этой проверки кто угодно мог бы прислать
+        # "appr:<id>" и одобрить/отклонить чужую заявку.
+        _answer_cb(WA_BOT_TOKEN, cb_id, "недоступно")
+        return
     try:
         action, sub_id = data.split(":", 1)
     except ValueError:
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "ошибка")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "ошибка")
         return
     ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
     sub = ref.get()
     if not sub:
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "заявка не найдена")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "заявка не найдена")
         return
     if sub.get("status") != "pending":
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "заявка уже обработана")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "заявка уже обработана")
         return
 
     if action == "appr":
         _approve(sub_id, sub)
-        _edit(WA_ADMIN_BOT_TOKEN, chat_id, msg_id,
+        _edit(WA_BOT_TOKEN, chat_id, msg_id,
               f"✅ Одобрено\n\n{_fmt_fields(sub['type'], sub['fields'])}")
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "Одобрено")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Одобрено")
     elif action == "rej":
         ref.update({"status": "rejected"})
-        _edit(WA_ADMIN_BOT_TOKEN, chat_id, msg_id,
+        _edit(WA_BOT_TOKEN, chat_id, msg_id,
               f"❌ Отклонено\n\n{_fmt_fields(sub['type'], sub['fields'])}")
         _send(WA_BOT_TOKEN, sub["tg_user_id"], "❌ Ваше объявление отклонено модератором.")
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "Отклонено")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Отклонено")
     elif action == "edit":
         db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").set({"editing": sub_id, "msg_id": msg_id})
-        _send(WA_ADMIN_BOT_TOKEN, chat_id,
+        _send(WA_BOT_TOKEN, chat_id,
               "✏️ Пришлите новый текст объявления одним сообщением — он заменит текущий, и заявка сразу одобрится.")
-        _answer_cb(WA_ADMIN_BOT_TOKEN, cb_id, "Жду текст")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Жду текст")
 
 
-def _handle_admin_message(msg):
-    chat_id = msg["chat"]["id"]
-    text = (msg.get("text") or "").strip()
-    if not text:
-        return
-    state = db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").get()
-    if not state or not state.get("editing"):
-        return
+def _handle_admin_edit_text(chat_id, text, state):
     sub_id = state["editing"]
     ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
     sub = ref.get()
@@ -306,7 +327,7 @@ def _handle_admin_message(msg):
         f["experience"] = text[:500]
     ref.child("fields").set(f)
     sub["fields"] = f
-    _edit(WA_ADMIN_BOT_TOKEN, chat_id, state.get("msg_id"),
+    _edit(WA_BOT_TOKEN, chat_id, state.get("msg_id"),
           f"✅ Отредактировано и одобрено\n\n{_fmt_fields(sub['type'], f)}")
     _approve(sub_id, sub)
 
@@ -373,24 +394,6 @@ def _reserve_amount(tg_user_id, price):
     while cents in used_cents and cents < 99:
         cents += 1
     return round(price + cents / 100.0, 2)
-
-
-# ─────────────────────────── вебхук: пользовательский бот ──────────────
-def _webhook_user():
-    if not _check_secret():
-        return jsonify({"ok": False}), 403
-    update = request.get_json(force=True, silent=True) or {}
-    try:
-        cb = update.get("callback_query")
-        if cb:
-            _handle_user_callback(cb)
-            return jsonify({"ok": True})
-        msg = update.get("message")
-        if msg:
-            _handle_user_message(msg)
-    except Exception as e:
-        print(f"[moderation] user webhook error: {e}")
-    return jsonify({"ok": True})
 
 
 def _boost_buttons(city, exclude_slot=None):
@@ -490,12 +493,7 @@ def _handle_user_callback(cb):
     _answer_cb(WA_BOT_TOKEN, cb_id, "")
 
 
-def _handle_user_message(msg):
-    chat_id = msg["chat"]["id"]
-    text = (msg.get("text") or "").strip()
-    if not text:
-        return
-
+def _handle_user_message(chat_id, text):
     if text == "/boost":
         _cmd_boost(chat_id)
         return
@@ -593,7 +591,7 @@ def _finish_submit_payment(chat_id, pending, txid, paid):
             break
 
     if free_n is None:
-        _send(WA_ADMIN_BOT_TOKEN, WA_ADMIN_CHAT_ID,
+        _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
               f"⚠️ Оплата подачи пришла (tx {txid[:12]}), но свободных мест из {slot_count} не осталось — "
               f"разберись вручную.\n\n{_fmt_fields('studio', f)}")
         sub_ref.update({"status": "paid_no_slot", "txid": txid, "paid_amount": paid})
@@ -611,7 +609,7 @@ def _finish_submit_payment(chat_id, pending, txid, paid):
         "clicks": 0, "owner_tg_id": chat_id,
     })
     sub_ref.update({"status": "published", "txid": txid, "paid_amount": paid, "published_slot": free_n})
-    _send(WA_ADMIN_BOT_TOKEN, WA_ADMIN_CHAT_ID,
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
           f"💰 Оплата подачи подтверждена: ${paid}, tx {txid[:12]} — опубликовано (место #{free_n}).")
     _send(WA_BOT_TOKEN, chat_id, "✅ Оплата подтверждена! Объявление опубликовано на сайте.")
     _offer_boost(chat_id, free_n, f.get("city", ""))
@@ -626,11 +624,11 @@ def _finish_boost_payment(chat_id, pending, txid, paid):
     ref = db.reference(f"{listings_ref}/{slot_key(slot_n)}")
     rec = ref.get()
     if not rec or rec.get("owner_tg_id") != chat_id:
-        _send(WA_ADMIN_BOT_TOKEN, WA_ADMIN_CHAT_ID,
+        _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
               f"⚠️ Оплата буста пришла (tx {txid[:12]}), но место #{slot_n} не найдено/сменило владельца — "
               f"разберись вручную.")
         return
     ref.update({"boost_tier": tier, "boost_expires_at": time.time() + (30 * 24 * 3600), "boost_price": price})
-    _send(WA_ADMIN_BOT_TOKEN, WA_ADMIN_CHAT_ID,
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID,
           f"💰 Оплата буста подтверждена: {BOOST_BUTTON_LABEL[tier]} ${paid}, tx {txid[:12]}, место #{slot_n}.")
     _send(WA_BOT_TOKEN, chat_id, f"✅ Буст {BOOST_BUTTON_LABEL[tier]} активирован на 30 дней!")
