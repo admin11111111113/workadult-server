@@ -14,6 +14,14 @@
   .section-block:first-child { padding-top: 0; border-top: none; }
   .section-block > h2 { font-size: 18px; margin: 0 0 16px; }
 
+  /* Вкладки: Главная страница / Вакансии / Каталог студий */
+  .tab-bar { display: flex; gap: 4px; margin: 32px 0 0; border-bottom: 1px solid #262a33; }
+  .tab-btn { background: none; border: none; color: #9aa0aa; font-size: 14px; font-weight: 700; padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn:hover { color: #fff; }
+  .tab-btn.active { color: #fff; border-bottom-color: #e91e8c; }
+  .tab-panel { display: none; border-top: none; padding-top: 28px; }
+  .tab-panel.active { display: block; }
+
   /* Обзор */
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-bottom: 32px; }
   .stat-card { background: #1a1d24; border-radius: 12px; padding: 20px; border: 1px solid #262a33; }
@@ -326,8 +334,14 @@
     </div>
   </div>
 
+  <div class="tab-bar">
+    <button type="button" class="tab-btn" data-tab="home" onclick="showTab('home')">🏠 Главная страница</button>
+    <button type="button" class="tab-btn" data-tab="vac" onclick="showTab('vac')">💼 Вакансии</button>
+    <button type="button" class="tab-btn" data-tab="catalog" onclick="showTab('catalog')">🏙️ Каталог студий</button>
+  </div>
+
   <!-- ВАКАНСИИ -->
-  <div class="section-block">
+  <div class="section-block tab-panel" id="tab-vac">
     <h2>💼 Вакансии</h2>
     <div class="catalog-toolbar">
       <span style="font-size:13px;color:#9aa0aa">Лента по дате (без закрепа) — новая вакансия всегда выше старой. Если у студии оплачен цветной тариф, её вакансия подсвечивается тем же цветом (не влияет на порядок). Публикация студиями — раз в неделю.</span>
@@ -442,7 +456,7 @@
   </div>
 
   <!-- СТУДИИ -->
-  <div class="section-block">
+  <div class="section-block tab-panel" id="tab-catalog">
     <h2>🏙️ Студии — платное размещение</h2>
     <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Обычных мест в городе — сколько угодно (разово, $70). Платных цветных (бронза/серебро/золото) — максимум 15 на город (по 5 каждого).</div>
     <div class="catalog-toolbar">
@@ -481,7 +495,7 @@
   </div>
 
   <!-- НА ГЛАВНОЙ -->
-  <div class="section-block">
+  <div class="section-block tab-panel" id="tab-home">
     <h2>🏠 Места на главной ($100/мес)</h2>
     <div class="catalog-toolbar">
       <span style="font-size:13px;color:#9aa0aa">Буст «на главной» не привязан к городу (общий лимит 5 на весь сайт) — эти карточки легко потерять в разбивке по городам, поэтому отдельным списком. Карточка — либо студия, либо вакансия (выбирается в форме).</span>
@@ -523,6 +537,13 @@ async function loadTraffic() {
   }
 }
 loadTraffic();
+
+/* ---------- Вкладки ---------- */
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === 'tab-' + name));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
+}
+showTab('home');
 
 /* ---------- Вакансии ---------- */
 function toggleVacAddCard() {
@@ -660,11 +681,13 @@ function toggleStudioAddCard(presetTier) {
   const card = document.getElementById('studioAddCard');
   const wasOpen = card.classList.contains('open');
   if (presetTier) {
-    // Открыли из «Места на главной» — переоткрываем форму заново с нужным
-    // тиром, даже если она уже была открыта с другими значениями.
+    // Открыли из «Места на главной» — форма живёт во вкладке «Каталог
+    // студий», переключаемся туда и переоткрываем с нужным тиром, даже
+    // если она уже была открыта с другими значениями.
+    showTab('catalog');
     card.classList.add('open');
     document.getElementById('studioAddFields').innerHTML = studioFormFields({boost_tier: presetTier});
-    card.scrollIntoView({behavior: 'smooth', block: 'center'});
+    setTimeout(() => card.scrollIntoView({behavior: 'smooth', block: 'center'}), 50);
     return;
   }
   card.classList.toggle('open');
