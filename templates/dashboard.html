@@ -168,6 +168,15 @@
 
 <div class="content">
 
+  <div class="tab-bar">
+    <button type="button" class="tab-btn" data-tab="overview" onclick="showTab('overview')">📊 Обзор</button>
+    <button type="button" class="tab-btn" data-tab="home" onclick="showTab('home')">🏠 Главная страница</button>
+    <button type="button" class="tab-btn" data-tab="vac" onclick="showTab('vac')">💼 Вакансии</button>
+    <button type="button" class="tab-btn" data-tab="catalog" onclick="showTab('catalog')">🏙️ Каталог студий</button>
+  </div>
+
+  <div class="tab-panel" id="tab-overview">
+
   <div class="section-block">
     <h2>🆕 Рассмотрение новых{% if review_studios or review_free %} <span class="badge active">{{ (review_studios|length) + (review_free|length) }}</span>{% endif %}</h2>
     <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Оплаченные студии (после оплаты — опубликовать/поправить/удалить) и бесплатные вакансии/резюме, ждущие одобрения. То же самое приходит в Telegram — можно обработать отсюда или оттуда, состояние общее.</div>
@@ -334,10 +343,6 @@
     </div>
   </div>
 
-  <div class="tab-bar">
-    <button type="button" class="tab-btn" data-tab="home" onclick="showTab('home')">🏠 Главная страница</button>
-    <button type="button" class="tab-btn" data-tab="vac" onclick="showTab('vac')">💼 Вакансии</button>
-    <button type="button" class="tab-btn" data-tab="catalog" onclick="showTab('catalog')">🏙️ Каталог студий</button>
   </div>
 
   <!-- ВАКАНСИИ -->
@@ -543,7 +548,7 @@ function showTab(name) {
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === 'tab-' + name));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
 }
-showTab('home');
+showTab('overview');
 
 /* ---------- Вакансии ---------- */
 function toggleVacAddCard() {
