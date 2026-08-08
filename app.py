@@ -513,6 +513,16 @@ def admin_api_traffic():
 def healthz():
     return jsonify({"ok": True})
 
+@app.route("/tg/fix-pricing", methods=["POST"])
+def _tmp_fix_pricing():
+    """ВРЕМЕННО: сбрасывает /workadult_pricing на правильные текущие тарифы
+    (в Firebase застряли значения со старой схемы gold/silver/bronze/regular).
+    Убрать после использования."""
+    if request.args.get("key") != os.environ.get("WA_WEBHOOK_SECRET", "").strip():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    db.reference(_PRICING_REF).set(dict(PRICING_DEFAULTS))
+    return jsonify({"ok": True, "pricing": PRICING_DEFAULTS})
+
 moderation.init_app(app, get_pricing=_get_pricing, listings_ref=_LISTINGS_REF,
                      vacancies_ref=_VACANCIES_REF, slot_key=_slot_key, slot_count=SLOT_COUNT)
 
