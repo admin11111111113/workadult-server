@@ -14,7 +14,7 @@ from flask_cors import CORS
 
 import moderation
 
-SLOT_COUNT = 100
+SLOT_COUNT = 800
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip() or secrets.token_hex(32)
 
