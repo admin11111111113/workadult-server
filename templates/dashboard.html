@@ -642,6 +642,13 @@ function studioFormFields(s) {
           <option value="home" ${tier === 'home' ? 'selected' : ''}>🏠 На главной — $${PRICING.home_price}/мес</option>
         </select>
       </div>
+      <div class="form-group full">
+        <label>Что рекламируем «на главной» (только для буста 🏠)</label>
+        <select name="promo_type">
+          <option value="studio" ${(s.promo_type || 'studio') === 'studio' ? 'selected' : ''}>🏢 Студию — карточка каталога</option>
+          <option value="vacancy" ${s.promo_type === 'vacancy' ? 'selected' : ''}>💼 Вакансию — объявление о работе</option>
+        </select>
+      </div>
     </div>
   `;
 }

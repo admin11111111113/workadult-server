@@ -5,6 +5,7 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+from urllib.parse import quote
 
 import firebase_admin
 import requests
@@ -212,12 +213,14 @@ def api_listings():
         listing.update(_public_extras(rec))
         listing["tier"] = tier
         listing["boost_price"] = boost_price
+        listing["promo_type"] = rec.get("promo_type") or "studio"
         out.append({"slot": n, "price": pricing["submit_price"], "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
 @app.route("/api/featured", methods=["GET"])
 def api_featured():
-    """Места с бустом «на главной» (см. тарифы в админке) для ротации на главной сайта"""
+    """Места с бустом «на главной» (см. тарифы в админке) для ротации на главной сайта.
+    promo_type: 'studio' — карточка студии/агентства, 'vacancy' — карточка вакансии."""
     raw = db.reference(_LISTINGS_REF).get() or {}
     featured = []
     for n in range(1, SLOT_COUNT + 1):
@@ -230,6 +233,7 @@ def api_featured():
             listing.update(_public_extras(rec))
             listing["slot"] = n
             listing["tier"] = tier
+            listing["promo_type"] = rec.get("promo_type") or "studio"
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
@@ -411,6 +415,7 @@ def admin_slot_save(n):
         "boost_tier":      boost_tier,
         "boost_expires_at": boost_expires_at,
         "boost_price":     boost_price,
+        "promo_type":      request.form.get("promo_type", "studio").strip() or "studio",
     }
     picked_fmt = request.form.getlist("fmt")
     for f in CATALOG_FORMATS:
@@ -553,9 +558,14 @@ def admin_seed_test_studios():
                 break
             n = free_slots[i]; i += 1
             boosted = tier != "regular"
-            # Случайная (но детерминированная) картинка-заглушка — чтобы посмотреть,
-            # как рамка тира выглядит поверх реального фото, а не пустого плейсхолдера.
-            photo_url = f"https://picsum.photos/seed/wa-test-{n}/500/500"
+            # Лого-заглушка (инициалы на цветном фоне тира) — чтобы увидеть
+            # рамку тира поверх настоящего лого, а не пустого плейсхолдера.
+            logo_bg = {"gold": "f5a623", "silver": "c9ccd6", "bronze": "cd7f32", "regular": "6a4bff"}[tier]
+            logo_fg = "2a1e00" if tier in ("gold", "bronze") else ("20222a" if tier == "silver" else "ffffff")
+            photo_url = (
+                "https://ui-avatars.com/api/?name=" + quote(name) +
+                f"&size=500&background={logo_bg}&color={logo_fg}&bold=true&format=png"
+            )
             rec = {
                 "name": name, "city": city,
                 "desc": "Тестовая карточка для проверки вёрстки — будет удалена.",

@@ -280,6 +280,11 @@ def _submit_studio():
         "social_instagram": (form.get("social_instagram") or "").strip()[:120],
         "social_vk": (form.get("social_vk") or "").strip()[:120],
     }
+    # Только для тарифа "на главной" — что рекламируем: карточку студии
+    # или объявление о вакансии (обе тем же слотом/тем же $100/мес).
+    promo_type = (form.get("promo_type") or "").strip()
+    fields["promo_type"] = promo_type if promo_type in ("studio", "vacancy") else "studio"
+
     if not fields["name"] or not fields["city"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
 
@@ -626,6 +631,7 @@ def publish_studio(sub_id):
         "status": "active", "boost_tier": tier, "boost_expires_at": expires_at,
         "boost_price": None if tier == "regular" else price,
         "clicks": 0, "owner_tg_id": sub["tg_user_id"],
+        "promo_type": f.get("promo_type") or "studio",
     })
     ref.update({"status": "published", "published_slot": free_n})
     _send(WA_BOT_TOKEN, sub["tg_user_id"], "🎉 Ваше объявление опубликовано на сайте!")
