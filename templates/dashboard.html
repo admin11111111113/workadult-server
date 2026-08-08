@@ -483,7 +483,10 @@
   <!-- НА ГЛАВНОЙ -->
   <div class="section-block">
     <h2>🏠 Места на главной ($100/мес)</h2>
-    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Буст «на главной» не привязан к городу (общий лимит 5 на весь сайт) — эти карточки легко потерять в разбивке по городам, поэтому отдельным списком.</div>
+    <div class="catalog-toolbar">
+      <span style="font-size:13px;color:#9aa0aa">Буст «на главной» не привязан к городу (общий лимит 5 на весь сайт) — эти карточки легко потерять в разбивке по городам, поэтому отдельным списком. Карточка — либо студия, либо вакансия (выбирается в форме).</span>
+      <button class="btn-add" onclick="toggleStudioAddCard('home')">+ Добавить место на главной</button>
+    </div>
     <div class="cat-grid" id="homeSlotsGrid"></div>
     <div class="cat-empty" id="homeSlotsEmpty" style="display:none">Пока нет мест с бустом «на главной»</div>
   </div>
@@ -653,10 +656,19 @@ function studioFormFields(s) {
   `;
 }
 
-function toggleStudioAddCard() {
+function toggleStudioAddCard(presetTier) {
   const card = document.getElementById('studioAddCard');
+  const wasOpen = card.classList.contains('open');
+  if (presetTier) {
+    // Открыли из «Места на главной» — переоткрываем форму заново с нужным
+    // тиром, даже если она уже была открыта с другими значениями.
+    card.classList.add('open');
+    document.getElementById('studioAddFields').innerHTML = studioFormFields({boost_tier: presetTier});
+    card.scrollIntoView({behavior: 'smooth', block: 'center'});
+    return;
+  }
   card.classList.toggle('open');
-  if (card.classList.contains('open')) {
+  if (!wasOpen) {
     document.getElementById('studioAddFields').innerHTML = studioFormFields({});
   }
 }

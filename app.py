@@ -554,6 +554,13 @@ _TEST_SEED_PHOTOS = [
     "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_94fdb123-46c5-42ee-8824-06e2f83ca7c4.png",
 ]
 
+# Два тестовых места «на главной» — по одному на каждый вариант промо,
+# чтобы сразу увидеть оба вида карточки в блоке «Рекомендуем» на сайте.
+_TEST_SEED_HOME = [
+    ("Москва", "Резиденс Голд Студио", "60–80%, апартаменты в центре, менеджер", "studio"),
+    ("Санкт-Петербург", "Ищем вебкам-модель — обучение с нуля", "40–60% на старте, гибкий график", "vacancy"),
+]
+
 @app.route("/admin/seed-test-studios", methods=["POST"])
 @_require_admin
 def admin_seed_test_studios():
@@ -562,34 +569,42 @@ def admin_seed_test_studios():
     free_slots = [n for n in range(1, SLOT_COUNT + 1) if not (raw.get(_slot_key(n)) or {}).get("name")]
     i = 0
     created = 0
+
+    def _seed_one(city, name, percent, tier, promo_type):
+        nonlocal i, created
+        if i >= len(free_slots):
+            return
+        n = free_slots[i]; i += 1
+        boosted = tier != "regular"
+        # Реальное фото интерьера (не инициалы-заглушка) — чтобы видеть
+        # карточки такими же живыми, как у конкурентов.
+        photo_url = _TEST_SEED_PHOTOS[i % len(_TEST_SEED_PHOTOS)]
+        rec = {
+            "name": name, "city": city,
+            "desc": "Тестовая карточка для проверки вёрстки — будет удалена.",
+            "photos": [photo_url], "cover_photo": photo_url, "photo": photo_url,
+            "contacts": "@test_" + str(n), "phone": "+7(900) 000-%02d-%02d" % (n % 100, (n * 7) % 100),
+            "url": "", "percent": percent,
+            "social_telegram": "", "social_instagram": "", "social_vk": "",
+            "status": "active", "boost_tier": tier,
+            "boost_expires_at": (time.time() + 30 * 24 * 3600) if boosted else None,
+            "boost_price": pricing[f"{tier}_price"] if boosted else None,
+            "clicks": 0, "is_test_seed": True,
+            "owner_tg_id": 900000000 + n,  # фейковый владелец — чтобы тестовые вакансии могли подхватить тир
+            "promo_type": promo_type,
+        }
+        for f in CATALOG_FORMATS:
+            rec["fmt_" + f] = f in ("studio",)
+        for f in STUDIO_FEATURES:
+            rec["feat_" + f] = False
+        db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").set(rec)
+        created += 1
+
     for city, studios in _TEST_SEED_STUDIOS.items():
         for tier, name, percent in studios:
-            if i >= len(free_slots):
-                break
-            n = free_slots[i]; i += 1
-            boosted = tier != "regular"
-            # Реальное фото интерьера (не инициалы-заглушка) — чтобы видеть
-            # карточки такими же живыми, как у конкурентов.
-            photo_url = _TEST_SEED_PHOTOS[i % len(_TEST_SEED_PHOTOS)]
-            rec = {
-                "name": name, "city": city,
-                "desc": "Тестовая карточка для проверки вёрстки — будет удалена.",
-                "photos": [photo_url], "cover_photo": photo_url, "photo": photo_url,
-                "contacts": "@test_" + str(n), "phone": "+7(900) 000-%02d-%02d" % (n % 100, (n * 7) % 100),
-                "url": "", "percent": percent,
-                "social_telegram": "", "social_instagram": "", "social_vk": "",
-                "status": "active", "boost_tier": tier,
-                "boost_expires_at": (time.time() + 30 * 24 * 3600) if boosted else None,
-                "boost_price": pricing[f"{tier}_price"] if boosted else None,
-                "clicks": 0, "is_test_seed": True,
-                "owner_tg_id": 900000000 + n,  # фейковый владелец — чтобы тестовые вакансии могли подхватить тир
-            }
-            for f in CATALOG_FORMATS:
-                rec["fmt_" + f] = f in ("studio",)
-            for f in STUDIO_FEATURES:
-                rec["feat_" + f] = False
-            db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").set(rec)
-            created += 1
+            _seed_one(city, name, percent, tier, "studio")
+    for city, name, percent, promo_type in _TEST_SEED_HOME:
+        _seed_one(city, name, percent, "home", promo_type)
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/cleanup-test-studios", methods=["POST"])
