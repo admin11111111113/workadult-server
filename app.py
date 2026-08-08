@@ -5,7 +5,6 @@ import secrets
 import time
 from datetime import datetime, timedelta
 from functools import wraps
-from urllib.parse import quote
 
 import firebase_admin
 import requests
@@ -544,6 +543,17 @@ _TEST_SEED_STUDIOS = {
     ],
 }
 
+_TEST_SEED_PHOTOS = [
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_26af51b5-5da7-44b4-b04d-8a7ea145a24f.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_a3ee8b4f-7e24-4299-941a-a80d32260a39.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_7915e6e8-68fa-4480-aa9c-9dc92b36686b.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_9e287fb4-ed4c-462a-9ecc-ca3dd65368fb.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_4bc0737e-8b81-4af3-85d1-c5f818267b19.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_96d37e4c-bde6-4974-b696-84f166a4166f.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_98dbca82-c670-4c22-a424-89b751c061e1.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_94fdb123-46c5-42ee-8824-06e2f83ca7c4.png",
+]
+
 @app.route("/admin/seed-test-studios", methods=["POST"])
 @_require_admin
 def admin_seed_test_studios():
@@ -558,14 +568,9 @@ def admin_seed_test_studios():
                 break
             n = free_slots[i]; i += 1
             boosted = tier != "regular"
-            # Лого-заглушка (инициалы на цветном фоне тира) — чтобы увидеть
-            # рамку тира поверх настоящего лого, а не пустого плейсхолдера.
-            logo_bg = {"gold": "f5a623", "silver": "c9ccd6", "bronze": "cd7f32", "regular": "6a4bff"}[tier]
-            logo_fg = "2a1e00" if tier in ("gold", "bronze") else ("20222a" if tier == "silver" else "ffffff")
-            photo_url = (
-                "https://ui-avatars.com/api/?name=" + quote(name) +
-                f"&size=500&background={logo_bg}&color={logo_fg}&bold=true&format=png"
-            )
+            # Реальное фото интерьера (не инициалы-заглушка) — чтобы видеть
+            # карточки такими же живыми, как у конкурентов.
+            photo_url = _TEST_SEED_PHOTOS[i % len(_TEST_SEED_PHOTOS)]
             rec = {
                 "name": name, "city": city,
                 "desc": "Тестовая карточка для проверки вёрстки — будет удалена.",
