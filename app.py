@@ -39,6 +39,52 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 _LISTINGS_REF = "/workadult_studios"
 _VACANCIES_REF = "/workadult_vacancies"
 _PRICING_REF = "/workadult_pricing"
+_DEMO_REF = "/workadult_demo"
+
+# Демо-заглушки (3 студии + 3 вакансии), которые сайт показывает вместо
+# пустого каталога/доски, пока нет ни одного настоящего объявления — сами
+# тексты редактируются в админке (вкладки «Каталог студий» / «Вакансии»),
+# сайт всегда берёт их через /api/demo, а не хранит захардкоженными в JS.
+DEMO_DEFAULTS = {
+    "studios": [
+        {"name": "Neon Studio", "city": "Москва", "percent": "50–70%, обучение, наставник",
+         "desc": "Уютные кабинеты в центре, новое оборудование, поддержка 24/7.",
+         "contact": "@neon_studio",
+         "photo": "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_26af51b5-5da7-44b4-b04d-8a7ea145a24f.png"},
+        {"name": "Aurora Webcam", "city": "Санкт-Петербург", "percent": "от 55%",
+         "desc": "Работа парами и соло, гибкий график, помощь новичкам.",
+         "contact": "@aurora_cam",
+         "photo": "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_4bc0737e-8b81-4af3-85d1-c5f818267b19.png"},
+        {"name": "HomeWork CAM", "city": "Новосибирск", "percent": "до 65%",
+         "desc": "Полностью удалённая работа, обучение онлайн.",
+         "contact": "@homework_cam",
+         "photo": "https://d8j0ntlcm91z4.cloudfront.net/user_3FOR5i8wwfqXhYSQz7etkkwYWMD/hf_20260808_160146_a3ee8b4f-7e24-4299-941a-a80d32260a39.png"},
+    ],
+    "vacancies": [
+        {"org": "Neon Studio", "title": "Вебкам-модель — новичкам", "salary": "50–70%, обучение, наставник",
+         "desc": "Стажировка, помощь с оформлением, старт без опыта.", "contact": "@neon_studio"},
+        {"org": "Aurora Webcam", "title": "Ищем модель для работы в паре", "salary": "от 55%",
+         "desc": "Гибкий график, помощь новичкам с анкетой.", "contact": "@aurora_cam"},
+        {"org": "HomeWork CAM", "title": "Удалённая работа из дома", "salary": "до 65%",
+         "desc": "Полностью удалённая работа, обучение онлайн.", "contact": "@homework_cam"},
+    ],
+}
+
+def _get_demo():
+    raw = db.reference(_DEMO_REF).get() or {}
+    out = {"studios": [], "vacancies": []}
+    raw_studios = raw.get("studios") or []
+    raw_vac = raw.get("vacancies") or []
+    for i in range(3):
+        s = dict(DEMO_DEFAULTS["studios"][i])
+        if i < len(raw_studios) and isinstance(raw_studios[i], dict):
+            s.update({k: v for k, v in raw_studios[i].items() if v})
+        out["studios"].append(s)
+        v = dict(DEMO_DEFAULTS["vacancies"][i])
+        if i < len(raw_vac) and isinstance(raw_vac[i], dict):
+            v.update({k: val for k, val in raw_vac[i].items() if val})
+        out["vacancies"].append(v)
+    return out
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude")
@@ -236,6 +282,12 @@ def api_featured():
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
+@app.route("/api/demo", methods=["GET"])
+def api_demo():
+    """Заглушки для пустого каталога/доски вакансий — редактируются в
+    админке, а не захардкожены в JS на сайте."""
+    return jsonify({"ok": True, **_get_demo()})
+
 @app.route("/api/tier-availability", methods=["GET"])
 def api_tier_availability():
     """Занятость платных уровней в городе — форма подачи на сайте показывает
@@ -352,6 +404,7 @@ def admin_dashboard():
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
+                           demo=_get_demo(),
                            catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
@@ -369,6 +422,40 @@ def admin_pricing_save():
         except ValueError:
             out[k] = default
     db.reference(_PRICING_REF).set(out)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/demo/save", methods=["POST"])
+@_require_admin
+def admin_demo_save():
+    """Раздельные формы (вкладки «Каталог студий» / «Вакансии») шлют только
+    свою половину полей — вторую половину не трогаем, берём как есть."""
+    current = _get_demo()
+    if "demo_studio_name_0" in request.form:
+        studios = []
+        for i in range(3):
+            studios.append({
+                "name": request.form.get(f"demo_studio_name_{i}", "").strip()[:120],
+                "city": request.form.get(f"demo_studio_city_{i}", "").strip()[:80],
+                "percent": request.form.get(f"demo_studio_percent_{i}", "").strip()[:60],
+                "desc": request.form.get(f"demo_studio_desc_{i}", "").strip()[:400],
+                "contact": request.form.get(f"demo_studio_contact_{i}", "").strip()[:200],
+                "photo": request.form.get(f"demo_studio_photo_{i}", "").strip()[:2000],
+            })
+    else:
+        studios = current["studios"]
+    if "demo_vac_org_0" in request.form:
+        vacancies = []
+        for i in range(3):
+            vacancies.append({
+                "org": request.form.get(f"demo_vac_org_{i}", "").strip()[:120],
+                "title": request.form.get(f"demo_vac_title_{i}", "").strip()[:160],
+                "salary": request.form.get(f"demo_vac_salary_{i}", "").strip()[:80],
+                "desc": request.form.get(f"demo_vac_desc_{i}", "").strip()[:400],
+                "contact": request.form.get(f"demo_vac_contact_{i}", "").strip()[:200],
+            })
+    else:
+        vacancies = current["vacancies"]
+    db.reference(_DEMO_REF).set({"studios": studios, "vacancies": vacancies})
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>", methods=["POST"])

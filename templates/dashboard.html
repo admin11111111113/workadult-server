@@ -361,6 +361,23 @@
       </form>
     </div>
 
+    <details style="margin-bottom:24px">
+      <summary style="cursor:pointer;color:#9aa0aa;font-size:13px;font-weight:700">🎭 Демо-заглушки (показываются на сайте, только пока вакансий нет)</summary>
+      <div style="font-size:12.5px;color:#666;margin:10px 0 14px">Эти 3 карточки сайт показывает вместо пустой доски вакансий. Как только появится хотя бы одна настоящая — заглушки исчезнут сами, редактировать их отдельно не обязательно.</div>
+      <form method="post" action="/admin/demo/save">
+        {% for v in demo.vacancies %}
+        <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
+          <div class="form-group"><label>Студия/компания</label><input name="demo_vac_org_{{ loop.index0 }}" value="{{ v.org }}"></div>
+          <div class="form-group"><label>Вакансия</label><input name="demo_vac_title_{{ loop.index0 }}" value="{{ v.title }}"></div>
+          <div class="form-group"><label>Зарплата/условия</label><input name="demo_vac_salary_{{ loop.index0 }}" value="{{ v.salary }}"></div>
+          <div class="form-group"><label>Контакт</label><input name="demo_vac_contact_{{ loop.index0 }}" value="{{ v.contact }}"></div>
+          <div class="form-group full"><label>Описание</label><textarea name="demo_vac_desc_{{ loop.index0 }}">{{ v.desc }}</textarea></div>
+        </div>
+        {% endfor %}
+        <button class="btn btn-save" type="submit">💾 Сохранить заглушки</button>
+      </form>
+    </details>
+
     <div class="vboard-preview-label">Так последние вакансии выглядят на главной сайта — клик по карточке открывает редактирование</div>
     {% if vac_top5 %}
     <div class="vboard-row">
@@ -478,6 +495,24 @@
         <button class="btn btn-delete" type="submit">🗑 Удалить тестовые</button>
       </form>
     </div>
+
+    <details style="margin-bottom:24px">
+      <summary style="cursor:pointer;color:#9aa0aa;font-size:13px;font-weight:700">🎭 Демо-заглушки (показываются на сайте, только пока студий нет)</summary>
+      <div style="font-size:12.5px;color:#666;margin:10px 0 14px">Эти 3 карточки сайт показывает в каталоге вместо пустого списка. Как только появится хотя бы одна настоящая студия — заглушки исчезнут сами, редактировать их отдельно не обязательно.</div>
+      <form method="post" action="/admin/demo/save">
+        {% for s in demo.studios %}
+        <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
+          <div class="form-group"><label>Название студии</label><input name="demo_studio_name_{{ loop.index0 }}" value="{{ s.name }}"></div>
+          <div class="form-group"><label>Город</label><input name="demo_studio_city_{{ loop.index0 }}" value="{{ s.city }}"></div>
+          <div class="form-group"><label>Процент</label><input name="demo_studio_percent_{{ loop.index0 }}" value="{{ s.percent }}"></div>
+          <div class="form-group"><label>Контакт</label><input name="demo_studio_contact_{{ loop.index0 }}" value="{{ s.contact }}"></div>
+          <div class="form-group full"><label>Описание</label><textarea name="demo_studio_desc_{{ loop.index0 }}">{{ s.desc }}</textarea></div>
+          <div class="form-group full"><label>Фото (ссылка)</label><input name="demo_studio_photo_{{ loop.index0 }}" value="{{ s.photo }}"></div>
+        </div>
+        {% endfor %}
+        <button class="btn btn-save" type="submit">💾 Сохранить заглушки</button>
+      </form>
+    </details>
 
     <div class="add-card" id="studioAddCard">
       <div id="studioAddFields"></div>
