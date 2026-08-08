@@ -552,7 +552,17 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="cat-empty">Пока нет вакансий</div>
+    <div style="font-size:12.5px;color:#666;margin-bottom:10px">Настоящих вакансий пока нет — на сайте прямо сейчас вместо этого блока показываются демо-заглушки (редактируются во вкладке «Вакансии»):</div>
+    <div class="vboard-row">
+      {% for v in demo.vacancies %}
+      <div class="vboard-card" style="opacity:.7">
+        <div class="org">{{ v.org }}</div>
+        <div class="title">{{ v.title }}</div>
+        {% if v.salary %}<div class="sal">{{ v.salary }}</div>{% endif %}
+        <div class="ct">заглушка</div>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
 
     <h3 style="font-size:15px;margin:32px 0 12px;color:#fff">⭐ Рекомендуем — места «на главной» ($100/мес, топ-5)</h3>
@@ -562,6 +572,19 @@
     </div>
     <div class="cat-grid" id="homeSlotsGrid"></div>
     <div class="cat-empty" id="homeSlotsEmpty" style="display:none">Пока нет мест с бустом «на главной»</div>
+    <div id="homeSlotsDemo" style="display:none">
+      <div style="font-size:12.5px;color:#666;margin-bottom:10px">Настоящих мест «на главной» пока нет — на сайте вместо этого показываются демо-студии (редактируются во вкладке «Каталог студий»):</div>
+      <div class="vboard-row">
+        {% for s in demo.studios %}
+        <div class="vboard-card" style="opacity:.7">
+          <div class="org">{{ s.city }}</div>
+          <div class="title">{{ s.name }}</div>
+          {% if s.percent %}<div class="sal">{{ s.percent }}</div>{% endif %}
+          <div class="ct">заглушка</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
   </div>
 
 </div>
@@ -864,7 +887,8 @@ function renderHomeSlots() {
   // Топ-5 — ровно как на сайте (index.html режет /api/featured на .slice(0,5))
   const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && s.boost_tier === 'home').slice(0, 5);
   document.getElementById('homeSlotsGrid').innerHTML = list.map(studioCardHtml).join('');
-  document.getElementById('homeSlotsEmpty').style.display = list.length ? 'none' : 'block';
+  document.getElementById('homeSlotsEmpty').style.display = 'none';
+  document.getElementById('homeSlotsDemo').style.display = list.length ? 'none' : 'block';
 }
 renderHomeSlots();
 
