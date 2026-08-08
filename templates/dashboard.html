@@ -59,7 +59,7 @@
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .form-group { display: flex; flex-direction: column; gap: 4px; }
   .form-group label { font-size: 11px; color: #9aa0aa; }
-  .form-group input, .form-group textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 13px; width: 100%; }
+  .form-group input, .form-group textarea, .form-group select { padding: 8px 10px; border-radius: 6px; border: 1px solid #333; background: #0f1115; color: #fff; font-size: 13px; width: 100%; }
   .form-group textarea { min-height: 60px; resize: vertical; }
   .form-group.full { grid-column: 1 / -1; }
   .actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
@@ -172,33 +172,38 @@
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
-      <h3>Тарифы на размещение студий</h3>
+      <h3>Тарифы: подача + буст</h3>
       <form method="post" action="/admin/pricing/save">
-        <div class="tier-row tier-row-gold">
-          <span class="tier-label">🥇 Золото</span>
-          <label>мест на город <input type="number" name="gold_count" value="{{ pricing.gold_count }}" min="0" max="{{ slot_count }}"></label>
-          <label>$ <input type="number" name="gold_price" value="{{ pricing.gold_price }}" min="0"> /мес</label>
-        </div>
-        <div class="tier-row tier-row-silver">
-          <span class="tier-label">🥈 Серебро</span>
-          <label>мест на город <input type="number" name="silver_count" value="{{ pricing.silver_count }}" min="0" max="{{ slot_count }}"></label>
-          <label>$ <input type="number" name="silver_price" value="{{ pricing.silver_price }}" min="0"> /мес</label>
+        <div class="tier-row tier-row-regular">
+          <span class="tier-label">Подача объявления</span>
+          <label>разовая оплата · публикация навсегда, без цвета</label>
+          <label>$ <input type="number" name="submit_price" value="{{ pricing.submit_price }}" min="0"> разово</label>
         </div>
         <div class="tier-row tier-row-bronze">
-          <span class="tier-label">🥉 Бронза</span>
+          <span class="tier-label">🥉 Бронза (буст)</span>
           <label>мест на город <input type="number" name="bronze_count" value="{{ pricing.bronze_count }}" min="0" max="{{ slot_count }}"></label>
           <label>$ <input type="number" name="bronze_price" value="{{ pricing.bronze_price }}" min="0"> /мес</label>
         </div>
-        <div class="tier-row tier-row-regular">
-          <span class="tier-label">Обычное</span>
-          <label>без лимита мест · разовая оплата · навсегда</label>
-          <label>$ <input type="number" name="regular_price" value="{{ pricing.regular_price }}" min="0"> разово</label>
+        <div class="tier-row tier-row-silver">
+          <span class="tier-label">🥈 Серебро (буст)</span>
+          <label>мест на город <input type="number" name="silver_count" value="{{ pricing.silver_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="silver_price" value="{{ pricing.silver_price }}" min="0"> /мес</label>
+        </div>
+        <div class="tier-row tier-row-gold">
+          <span class="tier-label">🥇 Золото (буст)</span>
+          <label>мест на город <input type="number" name="gold_count" value="{{ pricing.gold_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="gold_price" value="{{ pricing.gold_price }}" min="0"> /мес</label>
+        </div>
+        <div class="tier-row tier-row-gold" style="background:rgba(255,77,141,.06);border-color:rgba(255,77,141,.3)">
+          <span class="tier-label" style="color:#ff4d8d">🏠 На главной (буст)</span>
+          <label>мест по сайту <input type="number" name="home_count" value="{{ pricing.home_count }}" min="0" max="{{ slot_count }}"></label>
+          <label>$ <input type="number" name="home_price" value="{{ pricing.home_price }}" min="0"> /мес</label>
         </div>
         <div class="actions-row" style="margin-top:14px">
           <button class="btn btn-save" type="submit">💾 Сохранить тарифы</button>
         </div>
       </form>
-      <div class="traffic-note">Применяется к новым и пересохранённым местам. У уже занятых уровень/цена зафиксированы на момент размещения — нажми «Сохранить» на карточке места, чтобы пересчитать по новому тарифу. Золото/серебро/бронза — помесячно (автопродление +30 дней), «Обычное» — разовая оплата, публикация навсегда.</div>
+      <div class="traffic-note">Подача — разовая оплата, объявление остаётся навсегда как обычное. Буст (бронза/серебро/золото/на главной) — необязательная помесячная подписка сверху, поднимает цвет и место в городе (или на главную сайта). Не продлил буст — объявление тихо съезжает обратно к обычному цвету, сама публикация не пропадает.</div>
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
@@ -210,7 +215,7 @@
       <h3>Активные студии по городам</h3>
       {% set city_counts = {} %}
       {% for s in slots %}
-        {% if s.get('status') == 'active' and s.get('name') and not s.expired %}
+        {% if s.get('status') == 'active' and s.get('name') %}
           {% set city = s.get('city', 'Неизвестно') %}
           {% if city in city_counts %}
             {% set _ = city_counts.update({city: city_counts[city] + 1}) %}
@@ -375,7 +380,7 @@
       ] %}
       {% for city in cities %}
       {% set city_occupied = [] %}
-      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and not s.expired %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
+      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and s.get('name') %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
       <div class="city-btn {% if city_occupied|length > 0 %}{% endif %}"
            onclick="showCity('{{ city }}')"
            data-city="{{ city }}">
@@ -525,14 +530,7 @@
 // Данные слотов из сервера
 const ALL_SLOTS = {{ slots | tojson }};
 const PRICING = {{ pricing | tojson }};
-const TIER_LABEL = {gold: '🥇 Золото', silver: '🥈 Серебро', bronze: '🥉 Бронза', regular: 'Обычное'};
-
-function tierForRank(rank) {
-  if (rank <= PRICING.gold_count) return {tier: 'gold', price: PRICING.gold_price};
-  if (rank <= PRICING.gold_count + PRICING.silver_count) return {tier: 'silver', price: PRICING.silver_price};
-  if (rank <= PRICING.gold_count + PRICING.silver_count + PRICING.bronze_count) return {tier: 'bronze', price: PRICING.bronze_price};
-  return {tier: 'regular', price: PRICING.regular_price};
-}
+const TIER_LABEL = {home: '🏠 На главной', gold: '🥇 Золото', silver: '🥈 Серебро', bronze: '🥉 Бронза', regular: 'Обычное'};
 
 /* ---------- Посещаемость (Яндекс.Метрика) ---------- */
 async function loadTraffic() {
@@ -635,14 +633,11 @@ function showCity(city) {
   document.querySelectorAll('.city-btn').forEach(b => b.classList.toggle('active', b.dataset.city === city));
   document.getElementById('cityTitle').textContent = city;
 
-  // Золото/серебро/бронза — топ-N мест в городе (см. тарифы в «Обзоре»), остальные обычные.
-  // Занятые этим городом + свободные места (добавляем из общего пула до 15 карточек на просмотр).
-  const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active');
-  const previewCount = PRICING.gold_count + PRICING.silver_count + PRICING.bronze_count + 5;
-  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, Math.max(0, previewCount - citySlots.length));
+  // Занятые этим городом + немного свободных мест из общего пула на просмотр.
+  const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active' && s.name);
+  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, 10);
 
-  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято · золото '
-    + PRICING.gold_count + ' · серебро ' + PRICING.silver_count + ' · бронза ' + PRICING.bronze_count + ' на город';
+  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято в городе';
   document.getElementById('slotsPanel').classList.add('active');
 
   const grid = document.getElementById('slotsGrid');
@@ -655,41 +650,43 @@ function showCity(city) {
 }
 
 function renderSlot(grid, s, localNum, city) {
-  const isOccupied = s.name && s.status === 'active';
-  const isExpired = s.expired;
-  // У занятого места уровень/цена зафиксированы при размещении; у пустого —
-  // показываем, чем оно станет, если занять его следующим в этом городе.
-  const tier = isOccupied ? (s.tier || 'regular') : tierForRank(localNum).tier;
-  const price = isOccupied ? (s.price != null ? s.price : PRICING.regular_price) : tierForRank(localNum).price;
-  const perm = tier === 'regular';
+  const isOccupied = !!s.name;
+  const tier = s.boost_tier || 'regular';
+  const boosted = tier !== 'regular';
 
   let cardClass = 'slot-card';
-  if (tier !== 'regular') cardClass += ' tier-' + tier;
-  if (isOccupied && !isExpired) cardClass += ' occupied';
-  if (isExpired) cardClass += ' expired-card';
+  if (boosted) cardClass += ' tier-' + tier;
+  if (isOccupied && s.status === 'active') cardClass += ' occupied';
 
   let badgeHtml = '';
   if (!s.name) badgeHtml = '<span class="badge empty">пусто</span>';
-  else if (isExpired) badgeHtml = '<span class="badge expired">истёк</span>';
   else if (s.status === 'hidden') badgeHtml = '<span class="badge hidden">скрыто</span>';
   else badgeHtml = '<span class="badge active">активно</span>';
 
   let daysHtml = '';
-  if (isOccupied && perm) {
-    daysHtml = '<span class="days">♾ навсегда</span>';
-  } else if (s.days_left !== null && s.days_left !== undefined) {
-    const cls = s.days_left <= 0 ? 'danger' : s.days_left <= 3 ? 'warn' : '';
-    daysHtml = `<span class="days ${cls}">${s.days_left > 0 ? s.days_left + ' дн.' : 'истёк'}</span>`;
+  if (isOccupied && boosted && s.boost_days_left !== null && s.boost_days_left !== undefined) {
+    const cls = s.boost_days_left <= 3 ? 'warn' : '';
+    daysHtml = `<span class="days ${cls}">буст ещё ${s.boost_days_left} дн.</span>`;
   }
 
   const slotId = 'slot-' + s.slot;
+  const photos = (s.photos && s.photos.length) ? s.photos : ['', '', '', '', ''];
+  while (photos.length < 5) photos.push('');
+  const cover = s.cover_photo || photos[0] || '';
+  const fmts = ['studio', 'home', 'pair', 'guys', 'nonnude'];
+  const fmtLabels = {studio: 'В студии', home: 'Из дома', pair: 'Парой', guys: 'Принимаем парней', nonnude: 'Non Nude'};
+  const feats = ['weekly_pay', 'flexible_schedule', 'housing', 'training', 'city_center', 'near_metro'];
+  const featLabels = {weekly_pay: 'Еженедельные выплаты', flexible_schedule: 'Гибкий график',
+    housing: 'Предоставляем проживание', training: 'Обучение новичков',
+    city_center: 'В центре города', near_metro: 'Рядом с метро'};
 
   grid.innerHTML += `
     <div class="${cardClass}">
       <div class="slot-header" onclick="toggleSlot('${slotId}')">
         <div>
           <span class="slot-num">
-            <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span> Место #${localNum} (глоб. #${s.slot}) · $${price}${perm ? ' разово' : '/мес'}
+            <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span> Место #${localNum} (глоб. #${s.slot})
+            ${boosted ? ` · $${s.boost_price}/мес` : ''}
           </span>
           ${s.name ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${s.name}</div>` : ''}
         </div>
@@ -710,13 +707,30 @@ function renderSlot(grid, s, localNum, city) {
               <label>Город</label>
               <input name="city" value="${city}" readonly style="opacity:0.6">
             </div>
+            <div class="form-group">
+              <label>Процент для моделей</label>
+              <input name="percent" value="${s.percent || ''}" placeholder="Например: 50-70%">
+            </div>
+            <div class="form-group">
+              <label>Телефон</label>
+              <input name="phone" value="${s.phone || ''}" placeholder="+7...">
+            </div>
             <div class="form-group full">
               <label>Описание</label>
               <textarea name="desc" placeholder="Описание студии">${s.desc || ''}</textarea>
             </div>
+            <div class="form-group full">
+              <label>Фото (до 5 ссылок)</label>
+              <div style="display:grid;gap:6px">
+                ${photos.map((p, i) => `<input name="photos" value="${p}" placeholder="https://... фото ${i + 1}">`).join('')}
+              </div>
+            </div>
             <div class="form-group">
-              <label>Фото (URL)</label>
-              <input name="photo" value="${s.photo || ''}" placeholder="https://...">
+              <label>Фото для главной (обложка)</label>
+              <select name="cover_photo">
+                ${photos.filter(p => p).map(p => `<option value="${p}" ${p === cover ? 'selected' : ''}>${p.slice(0, 40)}...</option>`).join('')
+                  || '<option value="">— сначала добавьте фото —</option>'}
+              </select>
             </div>
             <div class="form-group">
               <label>Сайт (URL)</label>
@@ -726,16 +740,50 @@ function renderSlot(grid, s, localNum, city) {
               <label>Контакты (Telegram, телефон)</label>
               <input name="contacts" value="${s.contacts || ''}" placeholder="@studio или +7...">
             </div>
+            <div class="form-group">
+              <label>Telegram</label>
+              <input name="social_telegram" value="${s.social_telegram || ''}" placeholder="https://t.me/...">
+            </div>
+            <div class="form-group">
+              <label>Instagram</label>
+              <input name="social_instagram" value="${s.social_instagram || ''}" placeholder="https://instagram.com/...">
+            </div>
+            <div class="form-group">
+              <label>VK</label>
+              <input name="social_vk" value="${s.social_vk || ''}" placeholder="https://vk.com/...">
+            </div>
+            <div class="form-group full">
+              <label>Форматы работы</label>
+              <div class="fmt-checks">
+                ${fmts.map(f => `<label><input type="checkbox" name="fmt" value="${f}" ${s['fmt_' + f] ? 'checked' : ''}> ${fmtLabels[f]}</label>`).join('')}
+              </div>
+            </div>
+            <div class="form-group full">
+              <label>Особенности</label>
+              <div class="fmt-checks">
+                ${feats.map(f => `<label><input type="checkbox" name="feature" value="${f}" ${s['feat_' + f] ? 'checked' : ''}> ${featLabels[f]}</label>`).join('')}
+              </div>
+            </div>
+            <div class="form-group full">
+              <label>Буст (цвет/приоритет)</label>
+              <select name="boost_tier">
+                <option value="regular" ${tier === 'regular' ? 'selected' : ''}>Обычное (без буста)</option>
+                <option value="bronze" ${tier === 'bronze' ? 'selected' : ''}>🥉 Бронза — $${PRICING.bronze_price}/мес</option>
+                <option value="silver" ${tier === 'silver' ? 'selected' : ''}>🥈 Серебро — $${PRICING.silver_price}/мес</option>
+                <option value="gold" ${tier === 'gold' ? 'selected' : ''}>🥇 Золото — $${PRICING.gold_price}/мес</option>
+                <option value="home" ${tier === 'home' ? 'selected' : ''}>🏠 На главной — $${PRICING.home_price}/мес</option>
+              </select>
+            </div>
           </div>
           <div class="actions-row">
-            <button class="btn btn-save" type="submit">💾 Сохранить${perm ? '' : ' (+30 дней)'}</button>
+            <button class="btn btn-save" type="submit">💾 Сохранить</button>
           </div>
         </form>
         ${s.name ? `
         <div class="actions-row">
-          ${!perm ? `
+          ${boosted ? `
           <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
-            <button class="btn btn-extend" type="submit">🔄 +30 дней</button>
+            <button class="btn btn-extend" type="submit">🔄 Буст +30 дней</button>
           </form>
           ` : ''}
           <form method="post" action="/admin/slot/${s.slot}/hide" style="display:inline">

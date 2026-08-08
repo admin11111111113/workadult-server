@@ -12,6 +12,8 @@ from firebase_admin import credentials, db
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
 
+import moderation
+
 SLOT_COUNT = 100
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "").strip() or secrets.token_hex(32)
@@ -45,18 +47,37 @@ CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude")
 CATALOG_FMT_LABELS = {"studio": "В студии", "home": "Из дома", "pair": "Парой",
                       "guys": "Для парней", "nonnude": "Non Nude"}
 
+# Особенности студии (для платных мест workadult_studios) — чекбоксы в форме
+# «По городам» и в /api/listings. Форматы работы используют тот же словарь
+# CATALOG_FORMATS/CATALOG_FMT_LABELS, что и формат-каталог studii-katalog.html.
+STUDIO_FEATURES = ("weekly_pay", "flexible_schedule", "housing", "training", "city_center", "near_metro")
+STUDIO_FEATURE_LABELS = {
+    "weekly_pay": "Еженедельные выплаты", "flexible_schedule": "Гибкий график",
+    "housing": "Предоставляем проживание", "training": "Обучение новичков",
+    "city_center": "В центре города", "near_metro": "Рядом с метро",
+}
+STUDIO_SOCIAL_FIELDS = ("social_telegram", "social_instagram", "social_vk")
+MAX_STUDIO_PHOTOS = 5
+
 # Тарифы задаются в админке (вкладка «Обзор») и хранятся в Firebase — эти
 # значения только запасной вариант, если настройки ещё не сохранялись.
-# Три платных уровня в каждом городе (помесячно, автопродление +30 дней) +
-# «обычное» объявление — разовая оплата, публикация навсегда (без expires_at).
+#
+# Модель «база + буст»: submit_price — разовая оплата за публикацию, объявление
+# остаётся навсегда обычным (без цвета/приоритета). Поверх — необязательный
+# помесячный буст (бронза/серебро/золото/на главной), поднимающий цвет и место
+# в списке города (либо вообще на главную сайта). Не продлил буст — на главной
+# больше не показывается, а в городе тихо съезжает обратно на обычный цвет и
+# позицию; сама публикация НЕ пропадает (она разовая и навсегда).
 PRICING_DEFAULTS = {
-    "gold_count": 5, "gold_price": 100,
-    "silver_count": 5, "silver_price": 50,
-    "bronze_count": 5, "bronze_price": 25,
-    "regular_price": 70,
+    "submit_price": 70,
+    "bronze_count": 5, "bronze_price": 15,
+    "silver_count": 5, "silver_price": 30,
+    "gold_count": 5, "gold_price": 50,
+    "home_count": 5, "home_price": 100,
 }
-TIER_ORDER = ("gold", "silver", "bronze", "regular")
-TIER_LABELS = {"gold": "🥇 Золото", "silver": "🥈 Серебро", "bronze": "🥉 Бронза", "regular": "Обычное"}
+BOOST_TIERS = ("home", "gold", "silver", "bronze")     # порядок значимости, сверху вниз
+BOOST_LABELS = {"home": "🏠 На главной", "gold": "🥇 Золото",
+                "silver": "🥈 Серебро", "bronze": "🥉 Бронза", "regular": "Обычное"}
 
 def _get_pricing():
     raw = db.reference(_PRICING_REF).get() or {}
@@ -68,37 +89,60 @@ def _get_pricing():
             pass
     return out
 
-def _tier_for_rank(rank, pricing):
-    """По месту в очереди города определяет уровень и цену."""
-    if rank <= pricing["gold_count"]:
-        return "gold", pricing["gold_price"]
-    if rank <= pricing["gold_count"] + pricing["silver_count"]:
-        return "silver", pricing["silver_price"]
-    if rank <= pricing["gold_count"] + pricing["silver_count"] + pricing["bronze_count"]:
-        return "bronze", pricing["bronze_price"]
-    return "regular", pricing["regular_price"]
+def _effective_boost(rec):
+    """Текущий буст записи с учётом истечения: если срок буста прошёл — тихо
+    считаем её «обычной» (без переписывания записи — просто на чтении)."""
+    tier = rec.get("boost_tier") or "regular"
+    if tier == "regular":
+        return "regular", None
+    exp = rec.get("boost_expires_at")
+    if exp and time.time() > exp:
+        return "regular", None
+    return tier, rec.get("boost_price")
 
-PUBLIC_FIELDS = ("name", "city", "desc", "photo", "contacts", "url")
+PUBLIC_FIELDS = ("name", "city", "desc", "photo", "contacts", "url",
+                 "percent", "phone", "social_telegram", "social_instagram", "social_vk")
+
+def _public_extras(rec):
+    """Доп. поля студии, которые не влезают в плоский PUBLIC_FIELDS — списки фото
+    и мультивыборы (форматы работы/особенности)."""
+    photos = rec.get("photos") or []
+    cover = rec.get("cover_photo") or (photos[0] if photos else "")
+    return {
+        "photos": photos,
+        "cover_photo": cover,
+        "formats": [f for f in CATALOG_FORMATS if rec.get("fmt_" + f)],
+        "features": [f for f in STUDIO_FEATURES if rec.get("feat_" + f)],
+    }
 
 def _slot_key(n):
     return f"slot_{int(n):03d}"
 
-def _is_expired(rec):
-    """Проверяет истёк ли срок размещения. У «обычных» (навсегда) expires_at нет."""
-    expires_at = rec.get("expires_at")
-    if not expires_at:
-        return False
-    return time.time() > expires_at
-
-def _city_occupied_count(raw, city, exclude_slot=None):
-    """Сколько мест в этом городе уже куплено (active/hidden — кроме exclude_slot).
-    Нужно чтобы понять, каким по счёту в городе становится новое размещение."""
+def _city_boost_count(raw, city, tier, exclude_slot=None):
+    """Сколько мест в городе СЕЙЧАС реально держат этот буст (с учётом истечения)."""
     count = 0
     for n in range(1, SLOT_COUNT + 1):
         if n == exclude_slot:
             continue
         rec = raw.get(_slot_key(n))
-        if rec and rec.get("name") and rec.get("status") in ("active", "hidden") and rec.get("city") == city:
+        if not rec or not rec.get("name") or rec.get("city") != city:
+            continue
+        eff_tier, _ = _effective_boost(rec)
+        if eff_tier == tier:
+            count += 1
+    return count
+
+def _home_boost_count(raw, exclude_slot=None):
+    """Сколько мест сайта СЕЙЧАС держат буст «на главной» (общий лимит, не по городу)."""
+    count = 0
+    for n in range(1, SLOT_COUNT + 1):
+        if n == exclude_slot:
+            continue
+        rec = raw.get(_slot_key(n))
+        if not rec or not rec.get("name"):
+            continue
+        eff_tier, _ = _effective_boost(rec)
+        if eff_tier == "home":
             count += 1
     return count
 
@@ -146,31 +190,34 @@ def api_listings():
     out = []
     for n in range(1, SLOT_COUNT + 1):
         rec = raw.get(_slot_key(n))
-        # Скрываем если статус не active или срок истёк
-        if not rec or rec.get("status") != "active" or _is_expired(rec):
-            out.append({"slot": n, "price": pricing["regular_price"], "listing": None})
+        # Публикация разовая и навсегда — скрываем только по ручному статусу
+        # (админ «скрыл») или если места вообще нет.
+        if not rec or rec.get("status") != "active":
+            out.append({"slot": n, "price": pricing["submit_price"], "listing": None})
             continue
-        # цена фиксируется в момент размещения (см. admin_slot_save) — так
-        # смена тарифа в админке не задним числом меняет уже купленные места
-        price = rec.get("price", pricing["regular_price"])
+        tier, boost_price = _effective_boost(rec)
         listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
-        listing["expires_at"] = rec.get("expires_at")
-        listing["premium"] = rec.get("premium", False)
-        listing["tier"] = rec.get("tier", "regular")
-        out.append({"slot": n, "price": price, "listing": listing})
+        listing.update(_public_extras(rec))
+        listing["tier"] = tier
+        listing["boost_price"] = boost_price
+        out.append({"slot": n, "price": pricing["submit_price"], "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
 @app.route("/api/featured", methods=["GET"])
 def api_featured():
-    """Премиум-места (топ N в каждом городе — см. тарифы в админке) для ротации на главной"""
+    """Места с бустом «на главной» (см. тарифы в админке) для ротации на главной сайта"""
     raw = db.reference(_LISTINGS_REF).get() or {}
     featured = []
     for n in range(1, SLOT_COUNT + 1):
         rec = raw.get(_slot_key(n))
-        if rec and rec.get("status") == "active" and not _is_expired(rec) and rec.get("premium"):
+        if not rec or not rec.get("name") or rec.get("status") != "active":
+            continue
+        tier, _ = _effective_boost(rec)
+        if tier == "home":
             listing = {k: rec.get(k, "") for k in PUBLIC_FIELDS}
+            listing.update(_public_extras(rec))
             listing["slot"] = n
-            listing["tier"] = rec.get("tier", "regular")
+            listing["tier"] = tier
             featured.append(listing)
     return jsonify({"ok": True, "featured": featured})
 
@@ -247,22 +294,18 @@ def admin_dashboard():
     now = time.time()
     for n in range(1, SLOT_COUNT + 1):
         rec = raw.get(_slot_key(n)) or {}
-        # Вычисляем дней осталось
-        expires_at = rec.get("expires_at")
-        days_left = None
-        expired = False
-        if expires_at:
-            diff = expires_at - now
-            if diff < 0:
-                expired = True
-                days_left = 0
-            else:
-                days_left = int(diff / 86400)
-        slot = {"slot": n, "price": pricing["regular_price"], "premium": False, "tier": "regular",
-               "days_left": days_left, "expired": expired, **rec}
+        eff_tier, eff_price = ("regular", None)
+        boost_days_left = None
+        if rec:
+            eff_tier, eff_price = _effective_boost(rec)
+            exp = rec.get("boost_expires_at")
+            if exp and eff_tier != "regular":
+                boost_days_left = max(0, int((exp - now) / 86400))
+        slot = {"slot": n, **rec, "boost_tier": eff_tier, "boost_price": eff_price,
+               "boost_days_left": boost_days_left}
         slots.append(slot)
     total_clicks = sum(int(s.get("clicks", 0)) for s in slots)
-    occupied = sum(1 for s in slots if s.get("status") == "active" and not s.get("expired"))
+    occupied = sum(1 for s in slots if s.get("status") == "active" and s.get("name"))
 
     raw_vac = db.reference(_VACANCIES_REF).get() or {}
     vacancies = []
@@ -286,7 +329,8 @@ def admin_dashboard():
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
                            catalog_studios=catalog_studios, catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
-                           tier_labels=TIER_LABELS)
+                           boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
+                           studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS)
 
 @app.route("/admin/pricing/save", methods=["POST"])
 @_require_admin
@@ -307,49 +351,65 @@ def admin_slot_save(n):
         return redirect(url_for("admin_dashboard"))
 
     city = request.form.get("city", "").strip()[:80]
+    boost_tier = request.form.get("boost_tier", "regular").strip()
+    if boost_tier not in BOOST_TIERS:
+        boost_tier = "regular"
 
-    # Уровень/цена считаются по месту В ГОРОДЕ: топ-N золото, следующие N
-    # серебро, следующие N бронза (N и цены — из тарифов в админке), остальные
-    # «обычные». Считаем на момент сохранения — так правки тарифов применяются
-    # к новым и пересохранённым местам.
-    raw = db.reference(_LISTINGS_REF).get() or {}
+    # Публикация — всегда сразу и навсегда (админ размещает вручную, без
+    # оплаты). Буст — необязательный, помесячный (+30 дней), задаётся тут же.
     pricing = _get_pricing()
-    rank = _city_occupied_count(raw, city, exclude_slot=n) + 1
-    tier, price = _tier_for_rank(rank, pricing)
-    # Золото/серебро/бронза — помесячная оплата (автопродление +30 дней).
-    # «Обычное» — разовая оплата, публикация навсегда (без expires_at).
-    expires_at = None if tier == "regular" else time.time() + (30 * 24 * 3600)
+    boost_expires_at = None
+    boost_price = None
+    if boost_tier != "regular":
+        boost_expires_at = time.time() + (30 * 24 * 3600)
+        boost_price = pricing[f"{boost_tier}_price"]
+
+    photos = [p.strip()[:500] for p in request.form.getlist("photos") if p.strip()][:MAX_STUDIO_PHOTOS]
+    cover_photo = request.form.get("cover_photo", "").strip()
+    if cover_photo not in photos:
+        cover_photo = photos[0] if photos else ""
 
     rec = {
-        "name":       request.form.get("name", "").strip()[:120],
-        "city":       city,
-        "desc":       request.form.get("desc", "").strip()[:600],
-        "photo":      request.form.get("photo", "").strip()[:500],
-        "contacts":   request.form.get("contacts", "").strip()[:200],
-        "url":        request.form.get("url", "").strip()[:300],
-        "status":     "active",
-        "expires_at": expires_at,
-        "tier":       tier,
-        "premium":    tier != "regular",
-        "price":      price,
+        "name":            request.form.get("name", "").strip()[:120],
+        "city":            city,
+        "desc":            request.form.get("desc", "").strip()[:600],
+        "photos":          photos,
+        "cover_photo":     cover_photo,
+        "photo":           cover_photo,   # обратная совместимость со старым публичным полем
+        "contacts":        request.form.get("contacts", "").strip()[:200],
+        "phone":           request.form.get("phone", "").strip()[:40],
+        "url":             request.form.get("url", "").strip()[:300],
+        "percent":         request.form.get("percent", "").strip()[:60],
+        "social_telegram":  request.form.get("social_telegram", "").strip()[:120],
+        "social_instagram": request.form.get("social_instagram", "").strip()[:120],
+        "social_vk":        request.form.get("social_vk", "").strip()[:120],
+        "status":          "active",
+        "boost_tier":      boost_tier,
+        "boost_expires_at": boost_expires_at,
+        "boost_price":     boost_price,
     }
+    picked_fmt = request.form.getlist("fmt")
+    for f in CATALOG_FORMATS:
+        rec["fmt_" + f] = f in picked_fmt
+    picked_feat = request.form.getlist("feature")
+    for f in STUDIO_FEATURES:
+        rec["feat_" + f] = f in picked_feat
+
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
-    existing = raw.get(_slot_key(n)) or {}
+    existing = ref.get() or {}
     rec["clicks"] = int(existing.get("clicks", 0))
-    # Если продлеваем — сохраняем старые клики
     ref.set(rec)
     return redirect(url_for("admin_dashboard"))
 
 @app.route("/admin/slot/<int:n>/extend", methods=["POST"])
 @_require_admin
 def admin_slot_extend(n):
-    """Продлить на ещё 30 дней (только платные уровни — «обычное» и так навсегда)"""
+    """Продлить текущий буст ещё на 30 дней («обычное» — без буста, продлевать нечего)"""
     ref = db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}")
     rec = ref.get()
-    if rec and rec.get("tier") != "regular":
-        current = max(rec.get("expires_at", time.time()), time.time())
-        rec["expires_at"] = current + (30 * 24 * 3600)
-        rec["status"] = "active"
+    if rec and rec.get("boost_tier") and rec.get("boost_tier") != "regular":
+        current = max(rec.get("boost_expires_at") or time.time(), time.time())
+        rec["boost_expires_at"] = current + (30 * 24 * 3600)
         ref.set(rec)
     return redirect(url_for("admin_dashboard"))
 
@@ -452,6 +512,9 @@ def admin_api_traffic():
 @app.route("/healthz")
 def healthz():
     return jsonify({"ok": True})
+
+moderation.init_app(app, get_pricing=_get_pricing, listings_ref=_LISTINGS_REF,
+                     vacancies_ref=_VACANCIES_REF, slot_key=_slot_key, slot_count=SLOT_COUNT)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
