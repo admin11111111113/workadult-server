@@ -82,6 +82,26 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
     app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
+    app.add_url_rule("/tg/debug", "tg_debug", _debug, methods=["GET"])
+
+
+def _debug():
+    """ВРЕМЕННЫЙ диагностический эндпоинт — убрать после отладки доставки.
+    Защищён тем же WA_WEBHOOK_SECRET (?key=...), значения токенов не палит
+    целиком (только длина/хвост), но реально шлёт тестовое сообщение."""
+    if not WA_WEBHOOK_SECRET or request.args.get("key") != WA_WEBHOOK_SECRET:
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    info = {
+        "wa_bot_token_set": bool(WA_BOT_TOKEN),
+        "wa_bot_token_len": len(WA_BOT_TOKEN),
+        "wa_bot_token_tail": WA_BOT_TOKEN[-6:] if WA_BOT_TOKEN else None,
+        "wa_admin_chat_id_raw": repr(WA_ADMIN_CHAT_ID),
+        "wa_admin_chat_id_parsed": _admin_chat_id(),
+        "usdt_wallet_tail": USDT_WALLET[-6:] if USDT_WALLET else None,
+    }
+    send_result = _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, "🔧 /tg/debug ping — if you see this, env vars are correct.")
+    info["send_result"] = send_result
+    return jsonify(info)
 
 
 # ─────────────────────────── Telegram Bot API helpers ──────────────
