@@ -82,6 +82,26 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
     app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
+    app.add_url_rule("/tg/cleanup-test-submissions", "tg_cleanup_test", _cleanup_test_submissions, methods=["POST"])
+
+
+def _cleanup_test_submissions():
+    """ВРЕМЕННО: удаляет тестовые заявки (E2E/Test/Spoof в названии) из очереди
+    модерации. Убрать после использования."""
+    if not WA_WEBHOOK_SECRET or request.args.get("key") != WA_WEBHOOK_SECRET:
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    raw = db.reference(_SUBMISSIONS_REF).get() or {}
+    needles = ("e2e", "test", "spoof")
+    deleted = []
+    for sid, sub in raw.items():
+        if not isinstance(sub, dict):
+            continue
+        f = sub.get("fields") or {}
+        blob = " ".join(str(f.get(k, "")) for k in ("name", "org", "title")).lower()
+        if any(n in blob for n in needles):
+            db.reference(f"{_SUBMISSIONS_REF}/{sid}").delete()
+            deleted.append(blob.strip())
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 # ─────────────────────────── Telegram Bot API helpers ──────────────
