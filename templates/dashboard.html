@@ -25,6 +25,15 @@
   .city-row:last-child { border-bottom: none; }
   .city-row .bar { height: 4px; background: #e91e8c; border-radius: 2px; margin-top: 4px; }
 
+  /* Таблица городов */
+  .city-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .city-table th { text-align: left; font-size: 11px; color: #9aa0aa; padding: 8px 12px; border-bottom: 1px solid #262a33; }
+  .city-table td { padding: 12px; border-bottom: 1px solid #1a1d24; font-size: 13px; }
+  .city-table tr.city-row-clickable { cursor: pointer; }
+  .city-table tr.city-row-clickable:hover { background: rgba(255,255,255,0.03); }
+  .city-table .paid-bar { display: inline-block; width: 60px; height: 5px; border-radius: 3px; background: #262a33; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+  .city-table .paid-bar span { display: block; height: 100%; background: #e91e8c; }
+
   /* Города */
   .search-box { position: relative; margin-bottom: 20px; }
   .search-box input { width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid #333; background: #1a1d24; color: #fff; font-size: 14px; }
@@ -358,14 +367,14 @@
 
   <!-- СТУДИИ -->
   <div class="section-block">
-    <h2>🏙️ Студии</h2>
+    <h2>🏙️ Студии — платное размещение</h2>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Обычных мест в городе — сколько угодно (разово, $70). Платных цветных (бронза/серебро/золото) — максимум 15 на город (по 5 каждого).</div>
     <div class="catalog-toolbar">
       <div class="search-box" style="flex:1;margin-bottom:0;margin-right:12px">
-        <input type="text" id="studioSearch" placeholder="🔍 Поиск по названию или городу..." oninput="renderStudioGrid()">
+        <input type="text" id="studioSearch" placeholder="🔍 Поиск по городу..." oninput="renderCityTable()">
       </div>
       <button class="btn-add" onclick="toggleStudioAddCard()">+ Добавить объявление</button>
     </div>
-    <div style="font-size:13px;color:#9aa0aa;margin:12px 0 20px" id="studioGridSummary"></div>
 
     <div class="add-card" id="studioAddCard">
       <div id="studioAddFields"></div>
@@ -375,12 +384,22 @@
       </div>
     </div>
 
-    <div class="cat-grid" id="studioGrid"></div>
+    <table class="city-table" id="cityTable"><tbody></tbody></table>
+
+    <div id="studioGridWrap" style="display:none;margin-top:24px">
+      <div class="slots-title">
+        <span id="studioGridCity"></span>
+        <button class="small" onclick="closeCityStudios()" style="margin-left:auto">✕ Закрыть</button>
+      </div>
+      <div style="font-size:13px;color:#9aa0aa;margin:8px 0 16px" id="studioGridSummary"></div>
+      <div class="cat-grid" id="studioGrid"></div>
+    </div>
   </div>
 
   <!-- СТУДИИ (студий-каталог с сайта) -->
   <div class="section-block">
-    <h2>🗂️ Студии (каталог studii-katalog.html)</h2>
+    <h2>🗂️ Каталог самоподачи (studii-katalog.html)</h2>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Другой, независимый список — бесплатная страница сайта с форматами работы и Telegram-модерацией через бота, без тарифов/буста. Не связан с платными местами выше.</div>
     <div class="catalog-toolbar">
       <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи через Telegram-бота на studii-katalog.html — подмешивается к тем же карточкам</span>
       <button class="btn-add" onclick="toggleStudiiAddCard()">+ Добавить студию</button>
@@ -723,70 +742,104 @@ function submitStudioAdd() {
   form.submit();
 }
 
-function renderStudioGrid() {
-  const q = (document.getElementById('studioSearch').value || '').trim().toLowerCase();
-  const occupied = ALL_SLOTS.filter(s => s.name && s.status === 'active');
-  const filtered = q ? occupied.filter(s => (s.name || '').toLowerCase().includes(q) || (s.city || '').toLowerCase().includes(q)) : occupied;
-  const free = ALL_SLOTS.filter(s => !s.name).length;
-  document.getElementById('studioGridSummary').textContent =
-    `Показано ${filtered.length} из ${occupied.length} размещённых · свободных мест: ${free} из ${ALL_SLOTS.length}`;
+const PAID_TIERS = ['bronze', 'silver', 'gold'];   // "на главной" не привязана к городу — в счётчик города не идёт
+const PAID_CAP_PER_CITY = 15;                       // 5+5+5, при желании поменять — тарифы в «Обзоре»
 
-  const grid = document.getElementById('studioGrid');
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="cat-empty">Ничего не найдено</div>';
-    return;
+function studioCardHtml(s) {
+  const tier = s.boost_tier || 'regular';
+  const boosted = tier !== 'regular';
+  const cover = s.cover_photo || (s.photos && s.photos.find(p => p)) || s.photo || '';
+  const editId = 'studio-edit-' + s.slot;
+  let daysHtml = '';
+  if (boosted && s.boost_days_left !== null && s.boost_days_left !== undefined) {
+    const cls = s.boost_days_left <= 3 ? 'warn' : '';
+    daysHtml = `<span class="days ${cls}">буст ещё ${s.boost_days_left} дн.</span>`;
   }
-  grid.innerHTML = filtered.map(s => {
-    const tier = s.boost_tier || 'regular';
-    const boosted = tier !== 'regular';
-    const cover = s.cover_photo || (s.photos && s.photos.find(p => p)) || s.photo || '';
-    const editId = 'studio-edit-' + s.slot;
-    let daysHtml = '';
-    if (boosted && s.boost_days_left !== null && s.boost_days_left !== undefined) {
-      const cls = s.boost_days_left <= 3 ? 'warn' : '';
-      daysHtml = `<span class="days ${cls}">буст ещё ${s.boost_days_left} дн.</span>`;
-    }
-    return `
-    <div>
-      <div class="cat-card ${boosted ? 'tier-' + tier : ''}" onclick="toggleSlot('${editId}')" style="cursor:pointer">
-        <div class="cat-badge">
-          <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
-          <span>${s.status === 'hidden' ? '<span class="badge hidden">скрыто</span>' : (boosted ? '$' + s.boost_price + '/мес' : '')}</span>
-        </div>
-        ${cover ? `<img class="cat-photo" src="${cover}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="cat-name">${s.name}</div>
-        <div class="cat-city">📍 ${s.city || ''}${s.percent ? ' · 💰 ' + s.percent : ''}</div>
-        ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
-        ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
-        ${daysHtml}
+  return `
+  <div>
+    <div class="cat-card ${boosted ? 'tier-' + tier : ''}" onclick="toggleSlot('${editId}')" style="cursor:pointer">
+      <div class="cat-badge">
+        <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
+        <span>${s.status === 'hidden' ? '<span class="badge hidden">скрыто</span>' : (boosted ? '$' + s.boost_price + '/мес' : '')}</span>
       </div>
-      <div class="slot-body" id="${editId}">
-        <form method="post" action="/admin/slot/${s.slot}">
-          ${studioFormFields(s)}
-          <div class="actions-row">
-            <button class="btn btn-save" type="submit">💾 Сохранить</button>
-          </div>
-        </form>
+      ${cover ? `<img class="cat-photo" src="${cover}" alt="" onerror="this.style.display='none'">` : ''}
+      <div class="cat-name">${s.name}</div>
+      <div class="cat-city">📍 ${s.city || ''}${s.percent ? ' · 💰 ' + s.percent : ''}</div>
+      ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
+      ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
+      ${daysHtml}
+    </div>
+    <div class="slot-body" id="${editId}">
+      <form method="post" action="/admin/slot/${s.slot}">
+        ${studioFormFields(s)}
         <div class="actions-row">
-          ${boosted ? `
-          <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
-            <button class="btn btn-extend" type="submit">🔄 Буст +30 дней</button>
-          </form>
-          ` : ''}
-          <form method="post" action="/admin/slot/${s.slot}/hide" style="display:inline">
-            <button class="btn btn-hide" type="submit">${s.status === 'hidden' ? '👁 Показать' : '🙈 Скрыть'}</button>
-          </form>
-          <form method="post" action="/admin/slot/${s.slot}/delete" style="display:inline"
-                onsubmit="return confirm('Удалить?')">
-            <button class="btn btn-delete" type="submit">🗑 Удалить</button>
-          </form>
+          <button class="btn btn-save" type="submit">💾 Сохранить</button>
         </div>
+      </form>
+      <div class="actions-row">
+        ${boosted ? `
+        <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
+          <button class="btn btn-extend" type="submit">🔄 Буст +30 дней</button>
+        </form>
+        ` : ''}
+        <form method="post" action="/admin/slot/${s.slot}/hide" style="display:inline">
+          <button class="btn btn-hide" type="submit">${s.status === 'hidden' ? '👁 Показать' : '🙈 Скрыть'}</button>
+        </form>
+        <form method="post" action="/admin/slot/${s.slot}/delete" style="display:inline"
+              onsubmit="return confirm('Удалить?')">
+          <button class="btn btn-delete" type="submit">🗑 Удалить</button>
+        </form>
       </div>
     </div>
-    `;
-  }).join('');
+  </div>
+  `;
 }
-renderStudioGrid();
+
+function renderCityTable() {
+  const q = (document.getElementById('studioSearch').value || '').trim().toLowerCase();
+  const occupied = ALL_SLOTS.filter(s => s.name && s.status === 'active');
+  const byCity = {};
+  occupied.forEach(s => {
+    const c = s.city || 'Без города';
+    if (!byCity[c]) byCity[c] = {total: 0, paid: 0};
+    byCity[c].total++;
+    if (PAID_TIERS.includes(s.boost_tier)) byCity[c].paid++;
+  });
+  const cities = Object.keys(byCity)
+    .filter(c => !q || c.toLowerCase().includes(q))
+    .sort((a, b) => byCity[b].total - byCity[a].total);
+
+  const tbody = document.querySelector('#cityTable tbody');
+  if (!cities.length) {
+    tbody.innerHTML = `<tr><td colspan="3" class="cat-empty">${Object.keys(byCity).length ? 'Город не найден' : 'Пока нет размещённых студий'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML =
+    `<tr><th>Город</th><th>Студий</th><th>Платных мест</th></tr>` +
+    cities.map(c => {
+      const d = byCity[c];
+      const pct = Math.min(100, Math.round(d.paid / PAID_CAP_PER_CITY * 100));
+      return `<tr class="city-row-clickable" onclick="openCityStudios('${c.replace(/'/g, "\\'")}')">
+        <td>📍 ${c}</td>
+        <td>${d.total}</td>
+        <td><span class="paid-bar"><span style="width:${pct}%"></span></span>${d.paid}/${PAID_CAP_PER_CITY}</td>
+      </tr>`;
+    }).join('');
+}
+renderCityTable();
+
+function openCityStudios(city) {
+  const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && (s.city || 'Без города') === city);
+  document.getElementById('studioGridCity').textContent = '📍 ' + city;
+  document.getElementById('studioGridSummary').textContent = `${list.length} студий в городе`;
+  document.getElementById('studioGrid').innerHTML = list.map(studioCardHtml).join('');
+  document.getElementById('studioGridWrap').style.display = 'block';
+  document.getElementById('studioGridWrap').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function closeCityStudios() {
+  document.getElementById('studioGridWrap').style.display = 'none';
+}
 
 function toggleSlot(id) {
   const el = document.getElementById(id);
