@@ -68,6 +68,8 @@ _PROCESSED_TX_REF = "/workadult_processed_tx"
 _RESUMES_REF = "/workadult_resumes"
 _ADMIN_STATE_REF = "/workadult_admin_state"        # какую заявку сейчас редактирует чат админа
 _WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
+_VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> когда публиковал вакансию последний раз
+VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю на студию
 
 BOOST_ORDER = ("bronze", "silver", "gold", "home")   # порядок кнопок, дешёвый → дорогой
 BOOST_BUTTON_LABEL = {"bronze": "🥉 Бронза", "silver": "🥈 Серебро",
@@ -325,6 +327,14 @@ def _submit_vacancy():
     }
     if not fields["title"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
+
+    tg_id = auth.get("id")
+    last = db.reference(f"{_VACANCY_LAST_POST_REF}/{tg_id}").get() if tg_id else None
+    if last and time.time() - last < VACANCY_POST_COOLDOWN:
+        wait_days = int((VACANCY_POST_COOLDOWN - (time.time() - last)) / 86400) + 1
+        return jsonify({"ok": False, "error": "cooldown",
+                        "message": f"Можно публиковать не чаще раза в неделю. Попробуйте через {wait_days} дн."}), 429
+
     sub_id, sub = _new_submission("vacancy", fields, auth)
     if sub_id is None:
         return jsonify({"ok": False, "error": "auth"}), 400
@@ -495,8 +505,11 @@ def approve_free(sub_id):
         db.reference(_deps["vacancies_ref"]).push({
             "org": f.get("org", ""), "title": f.get("title", ""), "salary": f.get("salary", ""),
             "desc": f.get("desc", ""), "contact": f.get("contact", ""),
-            "pinned": False, "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now().strftime("%Y-%m-%d"), "ts": time.time(),
+            "tg_user_id": sub.get("tg_user_id"),
         })
+        if sub.get("tg_user_id"):
+            db.reference(f"{_VACANCY_LAST_POST_REF}/{sub['tg_user_id']}").set(time.time())
     elif sub["type"] == "resume":
         db.reference(_RESUMES_REF).push({
             "experience": f.get("experience", ""), "salary": f.get("salary", ""),

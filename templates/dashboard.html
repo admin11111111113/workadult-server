@@ -330,16 +330,23 @@
   <div class="section-block">
     <h2>💼 Вакансии</h2>
     <div class="catalog-toolbar">
-      <span style="font-size:13px;color:#9aa0aa">Отдельный список поверх самоподачи с сайта — подмешивается к тем же карточкам на главной и в «Вакансиях»</span>
+      <span style="font-size:13px;color:#9aa0aa">Лента по дате (без закрепа) — новая вакансия всегда выше старой. Если у студии оплачен цветной тариф, её вакансия подсвечивается тем же цветом (не влияет на порядок). Публикация студиями — раз в неделю.</span>
       <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
     </div>
+    <div class="actions-row" style="margin-bottom:20px">
+      <form method="post" action="/admin/seed-test-vacancies" style="display:inline">
+        <button class="btn btn-move" type="submit">🧪 Создать тестовые вакансии</button>
+      </form>
+      <form method="post" action="/admin/cleanup-test-vacancies" style="display:inline" onsubmit="return confirm('Удалить все тестовые вакансии?')">
+        <button class="btn btn-delete" type="submit">🗑 Удалить тестовые вакансии</button>
+      </form>
+    </div>
 
-    <div class="vboard-preview-label">⭐ Так закреплённые вакансии выглядят в ТОП-5 на главной сайта — клик по карточке открывает редактирование</div>
+    <div class="vboard-preview-label">Так последние вакансии выглядят на главной сайта — клик по карточке открывает редактирование</div>
     {% if vac_top5 %}
     <div class="vboard-row">
       {% for v in vac_top5 %}
       <div class="vboard-card" onclick="document.getElementById('vac-{{ v.key }}').classList.add('open');document.getElementById('vac-{{ v.key }}').scrollIntoView({behavior:'smooth',block:'center'})">
-        <span class="pin">★ ТОП</span>
         <div class="org">{{ v.org }}</div>
         <div class="title">{{ v.title }}</div>
         {% if v.salary %}<div class="sal">{{ v.salary }}</div>{% endif %}
@@ -348,7 +355,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="vboard-preview-label" style="color:#555">Пока нет закреплённых вакансий — отметьте чекбоксом «Закрепить» у любой ниже</div>
+    <div class="vboard-preview-label" style="color:#555">Пока нет вакансий</div>
     {% endif %}
 
     <div class="add-card" id="vacAddCard">
@@ -373,11 +380,6 @@
           <label>Описание</label>
           <textarea id="vacDesc" placeholder="Подробности"></textarea>
         </div>
-        <div class="form-group full">
-          <label style="flex-direction:row;align-items:center;gap:8px;display:flex">
-            <input type="checkbox" id="vacPinned" style="width:16px;height:16px"> Закрепить (⭐ в ТОП-5 на главной)
-          </label>
-        </div>
       </div>
       <div class="actions-row">
         <button class="btn btn-save" onclick="submitVacAdd()">💾 Добавить</button>
@@ -387,14 +389,13 @@
 
     <div class="slots-grid">
       {% for v in vacancies %}
-      <div class="slot-card {% if v.pinned %}premium{% endif %}">
+      <div class="slot-card">
         <div class="slot-header" onclick="toggleSlot('vac-{{ v.key }}')">
           <div>
-            <span class="slot-num {% if v.pinned %}premium{% endif %}">{% if v.pinned %}⭐ {% endif %}{{ v.title }}</span>
+            <span class="slot-num">{{ v.title }}</span>
             <div style="font-size:12px;color:#bbb;margin-top:2px">{{ v.org }}{% if v.salary %} · {{ v.salary }}{% endif %}</div>
           </div>
           <div class="slot-meta">
-            {% if v.pinned %}<span class="badge active">закреп</span>{% endif %}
             <span style="color:#555">▾</span>
           </div>
         </div>
@@ -421,11 +422,6 @@
               <div class="form-group full">
                 <label>Описание</label>
                 <textarea name="desc">{{ v.desc }}</textarea>
-              </div>
-              <div class="form-group full">
-                <label style="flex-direction:row;align-items:center;gap:8px;display:flex">
-                  <input type="checkbox" name="pinned" {% if v.pinned %}checked{% endif %}> Закрепить (⭐ в ТОП-5 на главной)
-                </label>
               </div>
             </div>
             <div class="actions-row">
@@ -542,8 +538,7 @@ function submitVacAdd() {
     org: org, title: title,
     salary: document.getElementById('vacSalary').value,
     contact: document.getElementById('vacContact').value,
-    desc: document.getElementById('vacDesc').value,
-    pinned: document.getElementById('vacPinned').checked ? 'on' : ''
+    desc: document.getElementById('vacDesc').value
   };
   Object.entries(fields).forEach(([k, v]) => {
     if (!v) return;

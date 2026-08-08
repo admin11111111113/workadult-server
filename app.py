@@ -87,6 +87,20 @@ def _get_pricing():
             pass
     return out
 
+def _studio_tier_for_tg(tg_id):
+    """Текущий тир студии этого владельца (по Telegram ID) — для подсветки
+    его вакансий тем же цветом, что и место в каталоге. Не влияет на
+    порядок вакансий, только на цвет рамки карточки."""
+    if not tg_id:
+        return "regular"
+    raw = db.reference(_LISTINGS_REF).get() or {}
+    for rec in raw.values():
+        if isinstance(rec, dict) and rec.get("owner_tg_id") == tg_id and rec.get("status") == "active":
+            tier, _ = _effective_boost(rec)
+            if tier != "regular":
+                return tier
+    return "regular"
+
 def _effective_boost(rec):
     """Текущий буст записи с учётом истечения: если срок буста прошёл — тихо
     считаем её «обычной» (без переписывания записи — просто на чтении)."""
@@ -238,18 +252,20 @@ def api_tier_availability():
 
 @app.route("/api/board", methods=["GET"])
 def api_board():
-    """Вакансии, добавленные вручную из админки — слой поверх board.json,
-    самоподача через workadult-bots не трогается, сайт подмешивает эти же
-    записи к своим."""
+    """Вакансии — лента по дате (без закрепа), карточка подсвечивается
+    текущим тиром студии-работодателя (по её Telegram ID), но порядок
+    от этого не меняется — только цвет."""
     raw = db.reference(_VACANCIES_REF).get() or {}
     vacancies = []
     for key, rec in raw.items():
         if not isinstance(rec, dict):
             continue
         item = {f: rec.get(f, "") for f in VACANCY_FIELDS}
-        item["pinned"] = bool(rec.get("pinned"))
         item["date"] = rec.get("date", "")
+        item["ts"] = rec.get("ts") or 0
+        item["tier"] = _studio_tier_for_tg(rec.get("tg_user_id"))
         vacancies.append(item)
+    vacancies.sort(key=lambda v: v["ts"], reverse=True)
     return jsonify({"ok": True, "vacancies": vacancies})
 
 @app.route("/api/click/<int:n>", methods=["POST"])
@@ -311,9 +327,8 @@ def admin_dashboard():
         if not isinstance(rec, dict):
             continue
         vacancies.append({"key": key, **rec})
-    # то же ТОП-5, что реально показывается на главной сайта (закреп, по дате)
-    vac_top5 = sorted((v for v in vacancies if v.get("pinned")),
-                      key=lambda v: v.get("date") or "", reverse=True)[:5]
+    # то же, что реально показывается на главной сайта — 5 последних по дате, без закрепа
+    vac_top5 = sorted(vacancies, key=lambda v: v.get("ts") or 0, reverse=True)[:5]
 
     # Рассмотрение новых: студии, уже оплаченные и ждущие публикации/правки/
     # удаления, + бесплатные вакансии/резюме, ждущие одобрения. То же самое,
@@ -552,6 +567,7 @@ def admin_seed_test_studios():
                 "boost_expires_at": (time.time() + 30 * 24 * 3600) if boosted else None,
                 "boost_price": pricing[f"{tier}_price"] if boosted else None,
                 "clicks": 0, "is_test_seed": True,
+                "owner_tg_id": 900000000 + n,  # фейковый владелец — чтобы тестовые вакансии могли подхватить тир
             }
             for f in CATALOG_FORMATS:
                 rec["fmt_" + f] = f in ("studio",)
@@ -569,6 +585,50 @@ def admin_cleanup_test_studios():
         rec = raw.get(_slot_key(n))
         if rec and rec.get("is_test_seed"):
             db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").delete()
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/seed-test-vacancies", methods=["POST"])
+@_require_admin
+def admin_seed_test_vacancies():
+    """Тестовые вакансии — по одной от студии каждого тира (если тестовые
+    студии уже созданы), чтобы увидеть подсветку карточки её цветом."""
+    raw = db.reference(_LISTINGS_REF).get() or {}
+    by_tier = {}
+    for rec in raw.values():
+        if isinstance(rec, dict) and rec.get("is_test_seed"):
+            by_tier.setdefault(rec.get("boost_tier", "regular"), rec)
+
+    templates = [
+        ("gold", "Вебкам-модель", "55–75%, обучение, наставник"),
+        ("gold", "Оператор чата", "оклад + % с продаж"),
+        ("silver", "Вебкам-модель", "50–65%, гибкий график"),
+        ("bronze", "Администратор студии", "оклад + бонусы"),
+        ("regular", "Вебкам-модель (удалённо)", "до 60% из дома"),
+        ("regular", "Вебкам-модель", "40–55%, без опыта"),
+    ]
+    ref_root = db.reference(_VACANCIES_REF)
+    now = time.time()
+    for i, (tier, title, salary) in enumerate(templates):
+        studio = by_tier.get(tier)
+        ref_root.push({
+            "org": studio["name"] if studio else "Тестовая студия",
+            "title": title, "salary": salary,
+            "desc": "Тестовая вакансия для проверки вёрстки — будет удалена.",
+            "contact": "@test_vac_" + str(i),
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "ts": now - i,
+            "tg_user_id": studio.get("owner_tg_id") if studio else None,
+            "is_test_seed": True,
+        })
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/cleanup-test-vacancies", methods=["POST"])
+@_require_admin
+def admin_cleanup_test_vacancies():
+    raw = db.reference(_VACANCIES_REF).get() or {}
+    for key, rec in list(raw.items()):
+        if isinstance(rec, dict) and rec.get("is_test_seed"):
+            db.reference(_VACANCIES_REF).child(key).delete()
     return redirect(url_for("admin_dashboard"))
 
 
@@ -620,7 +680,8 @@ def admin_review_free_reject(sub_id):
 @app.route("/admin/vacancy/save", methods=["POST"])
 @_require_admin
 def admin_vacancy_save():
-    """Добавить новую вакансию (без key) или отредактировать существующую (с key)."""
+    """Добавить новую вакансию (без key) или отредактировать существующую (с key).
+    Лента идёт по дате, без закрепа — новая всегда выше старой."""
     key = request.form.get("key", "").strip()
     ref_root = db.reference(_VACANCIES_REF)
     existing = ref_root.child(key).get() if key else None
@@ -630,8 +691,9 @@ def admin_vacancy_save():
         "salary":  request.form.get("salary", "").strip()[:120],
         "desc":    request.form.get("desc", "").strip()[:600],
         "contact": request.form.get("contact", "").strip()[:200],
-        "pinned":  request.form.get("pinned") == "on",
         "date":    (existing or {}).get("date") or datetime.now().strftime("%Y-%m-%d"),
+        "ts":      (existing or {}).get("ts") or time.time(),
+        "tg_user_id": (existing or {}).get("tg_user_id"),
     }
     if key and existing is not None:
         ref_root.child(key).set(rec)
