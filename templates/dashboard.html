@@ -455,6 +455,14 @@
       </div>
       <button class="btn-add" onclick="toggleStudioAddCard()">+ Добавить объявление</button>
     </div>
+    <div class="actions-row" style="margin-bottom:20px">
+      <form method="post" action="/admin/seed-test-studios" style="display:inline">
+        <button class="btn btn-move" type="submit">🧪 Создать 40 тестовых (Москва+СПб, все тиры)</button>
+      </form>
+      <form method="post" action="/admin/cleanup-test-studios" style="display:inline" onsubmit="return confirm('Удалить все тестовые объявления (is_test_seed)?')">
+        <button class="btn btn-delete" type="submit">🗑 Удалить тестовые</button>
+      </form>
+    </div>
 
     <div class="add-card" id="studioAddCard">
       <div id="studioAddFields"></div>
