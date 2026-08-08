@@ -356,49 +356,26 @@
     </div>
   </div>
 
-  <!-- ПО ГОРОДАМ -->
+  <!-- СТУДИИ -->
   <div class="section-block">
-    <h2>🏙️ Студии по городам</h2>
-    <div class="search-box">
-      <input type="text" id="citySearch" placeholder="🔍 Поиск города..." oninput="filterCities(this.value)">
+    <h2>🏙️ Студии</h2>
+    <div class="catalog-toolbar">
+      <div class="search-box" style="flex:1;margin-bottom:0;margin-right:12px">
+        <input type="text" id="studioSearch" placeholder="🔍 Поиск по названию или городу..." oninput="renderStudioGrid()">
+      </div>
+      <button class="btn-add" onclick="toggleStudioAddCard()">+ Добавить объявление</button>
+    </div>
+    <div style="font-size:13px;color:#9aa0aa;margin:12px 0 20px" id="studioGridSummary"></div>
+
+    <div class="add-card" id="studioAddCard">
+      <div id="studioAddFields"></div>
+      <div class="actions-row">
+        <button class="btn btn-save" onclick="submitStudioAdd()">💾 Добавить объявление</button>
+        <button class="btn btn-hide" onclick="toggleStudioAddCard()">Отмена</button>
+      </div>
     </div>
 
-    <div class="city-grid" id="cityGrid">
-      {% set cities = [
-        'Москва','Санкт-Петербург','Новосибирск','Екатеринбург','Казань',
-        'Нижний Новгород','Челябинск','Красноярск','Самара','Уфа',
-        'Ростов-на-Дону','Краснодар','Омск','Воронеж','Пермь','Волгоград',
-        'Саратов','Тюмень','Барнаул','Ижевск','Калининград','Кемерово',
-        'Томск','Сочи','Иркутск','Анапа','Белгород','Бийск','Владивосток',
-        'Владимир','Вологда','Дзержинск','Евпатория','Иваново','Йошкар-Ола',
-        'Калуга','Киров','Курск','Липецк','Набережные Челны','Нальчик',
-        'Нижневартовск','Нижнекамск','Нижний Тагил','Новокузнецк','Новороссийск',
-        'Оренбург','Пенза','Псков','Севастополь','Симферополь','Ставрополь',
-        'Стерлитамак','Сургут','Таганрог','Тамбов','Тверь','Тольятти','Тула',
-        'Ульяновск','Чайковский','Чебоксары','Чита','Энгельс','Ярославль',
-        'Беларусь','Украина','Казахстан','Кыргызстан','Молдова'
-      ] %}
-      {% for city in cities %}
-      {% set city_occupied = [] %}
-      {% for s in slots %}{% if s.get('city') == city and s.get('status') == 'active' and s.get('name') %}{% set _ = city_occupied.append(1) %}{% endif %}{% endfor %}
-      <div class="city-btn {% if city_occupied|length > 0 %}{% endif %}"
-           onclick="showCity('{{ city }}')"
-           data-city="{{ city }}">
-        {{ city }}
-        {% if city_occupied|length > 0 %}
-        <div class="count">{{ city_occupied|length }} студ.</div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-
-    <div class="slots-panel" id="slotsPanel">
-      <div class="slots-title">
-        <span id="cityTitle">Выберите город</span>
-        <span style="font-size:13px;color:#9aa0aa" id="citySubtitle"></span>
-      </div>
-      <div class="slots-grid" id="slotsGrid"></div>
-    </div>
+    <div class="cat-grid" id="studioGrid"></div>
   </div>
 
   <!-- СТУДИИ (студий-каталог с сайта) -->
@@ -623,163 +600,173 @@ function submitStudiiAdd() {
   form.submit();
 }
 
-function filterCities(q) {
-  document.querySelectorAll('.city-btn').forEach(btn => {
-    btn.style.display = btn.dataset.city.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
-  });
-}
+const FMT_LIST = ['studio', 'home', 'pair', 'guys', 'nonnude'];
+const FMT_LABELS = {studio: 'В студии', home: 'Из дома', pair: 'Парой', guys: 'Принимаем парней', nonnude: 'Non Nude'};
+const FEAT_LIST = ['weekly_pay', 'flexible_schedule', 'housing', 'training', 'city_center', 'near_metro'];
+const FEAT_LABELS = {weekly_pay: 'Еженедельные выплаты', flexible_schedule: 'Гибкий график',
+  housing: 'Предоставляем проживание', training: 'Обучение новичков',
+  city_center: 'В центре города', near_metro: 'Рядом с метро'};
 
-function showCity(city) {
-  document.querySelectorAll('.city-btn').forEach(b => b.classList.toggle('active', b.dataset.city === city));
-  document.getElementById('cityTitle').textContent = city;
-
-  // Занятые этим городом + немного свободных мест из общего пула на просмотр.
-  const citySlots = ALL_SLOTS.filter(s => s.city === city && s.status === 'active' && s.name);
-  const freeSlots = ALL_SLOTS.filter(s => !s.name).slice(0, 10);
-
-  document.getElementById('citySubtitle').textContent = citySlots.length + ' занято в городе';
-  document.getElementById('slotsPanel').classList.add('active');
-
-  const grid = document.getElementById('slotsGrid');
-  grid.innerHTML = '';
-
-  // Показываем занятые слоты этого города
-  citySlots.forEach((s, i) => renderSlot(grid, s, i + 1, city));
-  // Добавляем свободные места
-  freeSlots.forEach((s, i) => renderSlot(grid, s, citySlots.length + i + 1, city));
-}
-
-function renderSlot(grid, s, localNum, city) {
-  const isOccupied = !!s.name;
-  const tier = s.boost_tier || 'regular';
-  const boosted = tier !== 'regular';
-
-  let cardClass = 'slot-card';
-  if (boosted) cardClass += ' tier-' + tier;
-  if (isOccupied && s.status === 'active') cardClass += ' occupied';
-
-  let badgeHtml = '';
-  if (!s.name) badgeHtml = '<span class="badge empty">пусто</span>';
-  else if (s.status === 'hidden') badgeHtml = '<span class="badge hidden">скрыто</span>';
-  else badgeHtml = '<span class="badge active">активно</span>';
-
-  let daysHtml = '';
-  if (isOccupied && boosted && s.boost_days_left !== null && s.boost_days_left !== undefined) {
-    const cls = s.boost_days_left <= 3 ? 'warn' : '';
-    daysHtml = `<span class="days ${cls}">буст ещё ${s.boost_days_left} дн.</span>`;
-  }
-
-  const slotId = 'slot-' + s.slot;
-  const photos = (s.photos && s.photos.length) ? s.photos : ['', '', '', '', ''];
+/* Общая форма полей студии — та же и для добавления, и для редактирования
+   (те же поля, что в публичной форме подачи на сайте). */
+function studioFormFields(s) {
+  s = s || {};
+  const photos = (s.photos && s.photos.length) ? s.photos.slice() : [];
   while (photos.length < 5) photos.push('');
-  const cover = s.cover_photo || photos[0] || '';
-  const fmts = ['studio', 'home', 'pair', 'guys', 'nonnude'];
-  const fmtLabels = {studio: 'В студии', home: 'Из дома', pair: 'Парой', guys: 'Принимаем парней', nonnude: 'Non Nude'};
-  const feats = ['weekly_pay', 'flexible_schedule', 'housing', 'training', 'city_center', 'near_metro'];
-  const featLabels = {weekly_pay: 'Еженедельные выплаты', flexible_schedule: 'Гибкий график',
-    housing: 'Предоставляем проживание', training: 'Обучение новичков',
-    city_center: 'В центре города', near_metro: 'Рядом с метро'};
-
-  grid.innerHTML += `
-    <div class="${cardClass}">
-      <div class="slot-header" onclick="toggleSlot('${slotId}')">
-        <div>
-          <span class="slot-num">
-            <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span> Место #${localNum} (глоб. #${s.slot})
-            ${boosted ? ` · $${s.boost_price}/мес` : ''}
-          </span>
-          ${s.name ? `<div style="font-size:12px;color:#bbb;margin-top:2px">${s.name}</div>` : ''}
-        </div>
-        <div class="slot-meta">
-          ${daysHtml}
-          ${badgeHtml}
-          <span style="color:#555">▾</span>
+  const cover = s.cover_photo || photos.find(p => p) || '';
+  const tier = s.boost_tier || 'regular';
+  return `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Название студии</label>
+        <input name="name" value="${s.name || ''}" placeholder="Название">
+      </div>
+      <div class="form-group">
+        <label>Город</label>
+        <input name="city" value="${s.city || ''}" placeholder="Город">
+      </div>
+      <div class="form-group">
+        <label>Процент для моделей</label>
+        <input name="percent" value="${s.percent || ''}" placeholder="Например: 50-70%">
+      </div>
+      <div class="form-group">
+        <label>Телефон</label>
+        <input name="phone" value="${s.phone || ''}" placeholder="+7...">
+      </div>
+      <div class="form-group full">
+        <label>Описание</label>
+        <textarea name="desc" placeholder="Описание студии">${s.desc || ''}</textarea>
+      </div>
+      <div class="form-group full">
+        <label>Фото (до 5 ссылок, первое — обложка по умолчанию, 800×500)</label>
+        <div style="display:grid;gap:6px">
+          ${photos.map((p, i) => `<input name="photos" value="${p}" placeholder="https://... фото ${i + 1}">`).join('')}
         </div>
       </div>
-      <div class="slot-body" id="${slotId}">
+      <div class="form-group">
+        <label>Фото для главной (обложка)</label>
+        <select name="cover_photo">
+          ${photos.filter(p => p).map(p => `<option value="${p}" ${p === cover ? 'selected' : ''}>${p.slice(0, 40)}...</option>`).join('')
+            || '<option value="">— сначала добавьте фото —</option>'}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Сайт (URL)</label>
+        <input name="url" value="${s.url || ''}" placeholder="https://...">
+      </div>
+      <div class="form-group full">
+        <label>Контакты (Telegram, телефон)</label>
+        <input name="contacts" value="${s.contacts || ''}" placeholder="@studio или +7...">
+      </div>
+      <div class="form-group">
+        <label>Telegram</label>
+        <input name="social_telegram" value="${s.social_telegram || ''}" placeholder="https://t.me/...">
+      </div>
+      <div class="form-group">
+        <label>Instagram</label>
+        <input name="social_instagram" value="${s.social_instagram || ''}" placeholder="https://instagram.com/...">
+      </div>
+      <div class="form-group">
+        <label>VK</label>
+        <input name="social_vk" value="${s.social_vk || ''}" placeholder="https://vk.com/...">
+      </div>
+      <div class="form-group full">
+        <label>Форматы работы</label>
+        <div class="fmt-checks">
+          ${FMT_LIST.map(f => `<label><input type="checkbox" name="fmt" value="${f}" ${s['fmt_' + f] ? 'checked' : ''}> ${FMT_LABELS[f]}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group full">
+        <label>Особенности</label>
+        <div class="fmt-checks">
+          ${FEAT_LIST.map(f => `<label><input type="checkbox" name="feature" value="${f}" ${s['feat_' + f] ? 'checked' : ''}> ${FEAT_LABELS[f]}</label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group full">
+        <label>Буст (цвет/приоритет)</label>
+        <select name="boost_tier">
+          <option value="regular" ${tier === 'regular' ? 'selected' : ''}>Обычное (без буста)</option>
+          <option value="bronze" ${tier === 'bronze' ? 'selected' : ''}>🥉 Бронза — $${PRICING.bronze_price}/мес</option>
+          <option value="silver" ${tier === 'silver' ? 'selected' : ''}>🥈 Серебро — $${PRICING.silver_price}/мес</option>
+          <option value="gold" ${tier === 'gold' ? 'selected' : ''}>🥇 Золото — $${PRICING.gold_price}/мес</option>
+          <option value="home" ${tier === 'home' ? 'selected' : ''}>🏠 На главной — $${PRICING.home_price}/мес</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+function toggleStudioAddCard() {
+  const card = document.getElementById('studioAddCard');
+  card.classList.toggle('open');
+  if (card.classList.contains('open')) {
+    document.getElementById('studioAddFields').innerHTML = studioFormFields({});
+  }
+}
+
+function submitStudioAdd() {
+  const free = ALL_SLOTS.find(s => !s.name);
+  if (!free) { alert('Нет свободных мест из ' + ALL_SLOTS.length); return; }
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/slot/' + free.slot;
+  const src = document.getElementById('studioAddFields');
+  src.querySelectorAll('input, textarea, select').forEach(el => {
+    if ((el.type === 'checkbox') && !el.checked) return;
+    const clone = document.createElement('input');
+    clone.type = 'hidden';
+    clone.name = el.name;
+    clone.value = el.type === 'checkbox' ? el.value : el.value;
+    form.appendChild(clone);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function renderStudioGrid() {
+  const q = (document.getElementById('studioSearch').value || '').trim().toLowerCase();
+  const occupied = ALL_SLOTS.filter(s => s.name && s.status === 'active');
+  const filtered = q ? occupied.filter(s => (s.name || '').toLowerCase().includes(q) || (s.city || '').toLowerCase().includes(q)) : occupied;
+  const free = ALL_SLOTS.filter(s => !s.name).length;
+  document.getElementById('studioGridSummary').textContent =
+    `Показано ${filtered.length} из ${occupied.length} размещённых · свободных мест: ${free} из ${ALL_SLOTS.length}`;
+
+  const grid = document.getElementById('studioGrid');
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="cat-empty">Ничего не найдено</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(s => {
+    const tier = s.boost_tier || 'regular';
+    const boosted = tier !== 'regular';
+    const cover = s.cover_photo || (s.photos && s.photos.find(p => p)) || s.photo || '';
+    const editId = 'studio-edit-' + s.slot;
+    let daysHtml = '';
+    if (boosted && s.boost_days_left !== null && s.boost_days_left !== undefined) {
+      const cls = s.boost_days_left <= 3 ? 'warn' : '';
+      daysHtml = `<span class="days ${cls}">буст ещё ${s.boost_days_left} дн.</span>`;
+    }
+    return `
+    <div>
+      <div class="cat-card ${boosted ? 'tier-' + tier : ''}" onclick="toggleSlot('${editId}')" style="cursor:pointer">
+        <div class="cat-badge">
+          <span class="badge-tier ${tier}">${TIER_LABEL[tier]}</span>
+          <span>${s.status === 'hidden' ? '<span class="badge hidden">скрыто</span>' : (boosted ? '$' + s.boost_price + '/мес' : '')}</span>
+        </div>
+        ${cover ? `<img class="cat-photo" src="${cover}" alt="" onerror="this.style.display='none'">` : ''}
+        <div class="cat-name">${s.name}</div>
+        <div class="cat-city">📍 ${s.city || ''}${s.percent ? ' · 💰 ' + s.percent : ''}</div>
+        ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
+        ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
+        ${daysHtml}
+      </div>
+      <div class="slot-body" id="${editId}">
         <form method="post" action="/admin/slot/${s.slot}">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Название студии</label>
-              <input name="name" value="${s.name || ''}" placeholder="Название">
-            </div>
-            <div class="form-group">
-              <label>Город</label>
-              <input name="city" value="${city}" readonly style="opacity:0.6">
-            </div>
-            <div class="form-group">
-              <label>Процент для моделей</label>
-              <input name="percent" value="${s.percent || ''}" placeholder="Например: 50-70%">
-            </div>
-            <div class="form-group">
-              <label>Телефон</label>
-              <input name="phone" value="${s.phone || ''}" placeholder="+7...">
-            </div>
-            <div class="form-group full">
-              <label>Описание</label>
-              <textarea name="desc" placeholder="Описание студии">${s.desc || ''}</textarea>
-            </div>
-            <div class="form-group full">
-              <label>Фото (до 5 ссылок)</label>
-              <div style="display:grid;gap:6px">
-                ${photos.map((p, i) => `<input name="photos" value="${p}" placeholder="https://... фото ${i + 1}">`).join('')}
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Фото для главной (обложка)</label>
-              <select name="cover_photo">
-                ${photos.filter(p => p).map(p => `<option value="${p}" ${p === cover ? 'selected' : ''}>${p.slice(0, 40)}...</option>`).join('')
-                  || '<option value="">— сначала добавьте фото —</option>'}
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Сайт (URL)</label>
-              <input name="url" value="${s.url || ''}" placeholder="https://...">
-            </div>
-            <div class="form-group full">
-              <label>Контакты (Telegram, телефон)</label>
-              <input name="contacts" value="${s.contacts || ''}" placeholder="@studio или +7...">
-            </div>
-            <div class="form-group">
-              <label>Telegram</label>
-              <input name="social_telegram" value="${s.social_telegram || ''}" placeholder="https://t.me/...">
-            </div>
-            <div class="form-group">
-              <label>Instagram</label>
-              <input name="social_instagram" value="${s.social_instagram || ''}" placeholder="https://instagram.com/...">
-            </div>
-            <div class="form-group">
-              <label>VK</label>
-              <input name="social_vk" value="${s.social_vk || ''}" placeholder="https://vk.com/...">
-            </div>
-            <div class="form-group full">
-              <label>Форматы работы</label>
-              <div class="fmt-checks">
-                ${fmts.map(f => `<label><input type="checkbox" name="fmt" value="${f}" ${s['fmt_' + f] ? 'checked' : ''}> ${fmtLabels[f]}</label>`).join('')}
-              </div>
-            </div>
-            <div class="form-group full">
-              <label>Особенности</label>
-              <div class="fmt-checks">
-                ${feats.map(f => `<label><input type="checkbox" name="feature" value="${f}" ${s['feat_' + f] ? 'checked' : ''}> ${featLabels[f]}</label>`).join('')}
-              </div>
-            </div>
-            <div class="form-group full">
-              <label>Буст (цвет/приоритет)</label>
-              <select name="boost_tier">
-                <option value="regular" ${tier === 'regular' ? 'selected' : ''}>Обычное (без буста)</option>
-                <option value="bronze" ${tier === 'bronze' ? 'selected' : ''}>🥉 Бронза — $${PRICING.bronze_price}/мес</option>
-                <option value="silver" ${tier === 'silver' ? 'selected' : ''}>🥈 Серебро — $${PRICING.silver_price}/мес</option>
-                <option value="gold" ${tier === 'gold' ? 'selected' : ''}>🥇 Золото — $${PRICING.gold_price}/мес</option>
-                <option value="home" ${tier === 'home' ? 'selected' : ''}>🏠 На главной — $${PRICING.home_price}/мес</option>
-              </select>
-            </div>
-          </div>
+          ${studioFormFields(s)}
           <div class="actions-row">
             <button class="btn btn-save" type="submit">💾 Сохранить</button>
           </div>
         </form>
-        ${s.name ? `
         <div class="actions-row">
           ${boosted ? `
           <form method="post" action="/admin/slot/${s.slot}/extend" style="display:inline">
@@ -794,11 +781,12 @@ function renderSlot(grid, s, localNum, city) {
             <button class="btn btn-delete" type="submit">🗑 Удалить</button>
           </form>
         </div>
-        ` : ''}
       </div>
     </div>
-  `;
+    `;
+  }).join('');
 }
+renderStudioGrid();
 
 function toggleSlot(id) {
   const el = document.getElementById(id);
