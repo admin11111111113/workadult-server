@@ -84,6 +84,7 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     _deps.update(get_pricing=get_pricing, listings_ref=listings_ref,
                  vacancies_ref=vacancies_ref, slot_key=slot_key, slot_count=slot_count)
     app.add_url_rule("/api/submit-studio", "submit_studio", _submit_studio, methods=["POST"])
+    app.add_url_rule("/api/confirm-payment", "confirm_payment", _confirm_payment, methods=["POST"])
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
     app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
@@ -323,7 +324,7 @@ def _submit_studio():
           f"<code>{USDT_WALLET}</code>\n\n"
           f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
           f"После оплаты пришлите сюда одним сообщением хэш транзакции (TxID).")
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "amount": amount, "address": USDT_WALLET, "tier": tier, "price": price, "capped": capped})
 
 
 def _submit_vacancy():
@@ -754,26 +755,26 @@ def _handle_user_callback(cb):
     _answer_cb(WA_BOT_TOKEN, cb_id, "")
 
 
-def _handle_user_message(chat_id, text):
-    if text == "/boost":
-        _cmd_boost(chat_id)
-        return
-
+def _process_txid(chat_id, txid):
+    """Проверка и зачисление оплаты по TxID — общая для Telegram-бота (сообщение
+    в чат) и веб-кнопки «Я оплатил» на сайте. Возвращает (ok, код_ошибки_или_None).
+    Сообщения в Telegram шлём в обоих случаях — чтобы у пользователя остался след
+    независимо от того, откуда пришёл TxID."""
     pending = db.reference(f"{_PENDING_PAY_REF}/{chat_id}").get()
     if not pending or not pending.get("amount"):
-        return   # не ждём от этого пользователя платёж — молча игнорируем текст
+        return False, "no_pending"
 
-    txid = text
     if _tx_already_used(txid):
         _send(WA_BOT_TOKEN, chat_id, "⚠️ Этот TxID уже был использован ранее.")
-        return
+        return False, "used"
+
     amount = pending.get("amount")
     paid = _verify_tx_onchain(txid, amount)
     if paid is None:
         _send(WA_BOT_TOKEN, chat_id,
               "❌ Платёж не найден или сумма меньше нужной. Проверьте перевод и пришлите TxID ещё раз "
               "(обычно платёж подтверждается в сети за 1-3 минуты).")
-        return
+        return False, "not_found"
 
     if pending.get("kind") == "submit":
         _finish_submit_payment(chat_id, pending, txid, paid)
@@ -784,6 +785,27 @@ def _handle_user_message(chat_id, text):
         "tg_user_id": chat_id, "amount": paid, "kind": pending.get("kind"),
         "processed_at": datetime.now().isoformat()})
     db.reference(f"{_PENDING_PAY_REF}/{chat_id}").delete()
+    return True, None
+
+
+def _handle_user_message(chat_id, text):
+    if text == "/boost":
+        _cmd_boost(chat_id)
+        return
+    _process_txid(chat_id, text)
+
+
+def _confirm_payment():
+    """POST /api/confirm-payment — кнопка «Я оплатил» на сайте: TxID вводится
+    прямо в форме, без перехода в Telegram. Та же проверка, что у бота."""
+    data = request.get_json(force=True, silent=True) or {}
+    auth = data.get("auth") or {}
+    tg_id = auth.get("id")
+    txid = (data.get("txid") or "").strip()
+    if not tg_id or not txid:
+        return jsonify({"ok": False, "error": "fields"}), 400
+    ok, err = _process_txid(tg_id, txid)
+    return jsonify({"ok": ok, "error": err})
 
 
 def _cmd_boost(chat_id):
