@@ -264,6 +264,7 @@ def api_listings():
         listing["tier"] = tier
         listing["boost_price"] = boost_price
         listing["promo_type"] = rec.get("promo_type") or "studio"
+        listing["admin_rating"] = rec.get("admin_rating")
         out.append({"slot": n, "price": pricing["submit_price"], "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
@@ -514,6 +515,9 @@ def admin_slot_save(n):
     if cover_photo not in photos:
         cover_photo = photos[0] if photos else ""
 
+    admin_rating_raw = request.form.get("admin_rating", "").strip()
+    admin_rating = int(admin_rating_raw) if admin_rating_raw.isdigit() and 1 <= int(admin_rating_raw) <= 5 else None
+
     rec = {
         "name":            request.form.get("name", "").strip()[:120],
         "city":            city,
@@ -533,6 +537,7 @@ def admin_slot_save(n):
         "boost_expires_at": boost_expires_at,
         "boost_price":     boost_price,
         "promo_type":      request.form.get("promo_type", "studio").strip() or "studio",
+        "admin_rating":    admin_rating,
     }
     picked_fmt = request.form.getlist("fmt")
     for f in CATALOG_FORMATS:

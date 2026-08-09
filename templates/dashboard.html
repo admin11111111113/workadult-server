@@ -1105,6 +1105,16 @@ function studioFormFields(s) {
           <option value="vacancy" ${s.promo_type === 'vacancy' ? 'selected' : ''}>💼 Вакансию — объявление о работе</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>Рейтинг на карточке (звёзды)</label>
+        <select name="admin_rating">
+          <option value="" ${!s.admin_rating ? 'selected' : ''}>Авто — 4★, у золота/на главной 5★, пока буст активен</option>
+          <option value="5" ${s.admin_rating == 5 ? 'selected' : ''}>Всегда 5★</option>
+          <option value="4" ${s.admin_rating == 4 ? 'selected' : ''}>Всегда 4★</option>
+          <option value="3" ${s.admin_rating == 3 ? 'selected' : ''}>Всегда 3★</option>
+        </select>
+        <div style="font-size:11.5px;color:#666;margin-top:4px">Если у студии уже есть настоящие отзывы — на сайте показывается их реальная оценка, это поле игнорируется.</div>
+      </div>
     </div>
   `;
 }
