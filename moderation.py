@@ -35,6 +35,7 @@ USDT-TRC20, допуск ±3 USDT, идемпотентность по txid.
 бы подделать callback_data и опубликовать/удалить чужую заявку.
 """
 import os
+import re
 import time
 from datetime import datetime
 
@@ -67,6 +68,9 @@ _BOOST_CTX_REF = "/workadult_boost_ctx"            # tg_user_id -> какое м
 _PROCESSED_TX_REF = "/workadult_processed_tx"
 _RESUMES_REF = "/workadult_resumes"
 _ADMIN_STATE_REF = "/workadult_admin_state"        # какую заявку сейчас редактирует чат админа
+_SUPPORT_THREAD_REF = "/workadult_support_thread"  # tg_user_id -> открыт ли диалог с поддержкой
+SUPPORT_THREAD_TTL = 48 * 3600
+_TXID_RE = re.compile(r"^[0-9a-fA-F]{64}$")         # хэш транзакции Tron — ровно 64 hex-символа
 _WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
 _VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> когда публиковал вакансию последний раз
 VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю на студию
@@ -453,6 +457,7 @@ def _handle_message(msg):
         if state and state.get("replying_to"):
             target = state["replying_to"]
             db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").delete()
+            db.reference(f"{_SUPPORT_THREAD_REF}/{target}").set({"active": True, "started_at": time.time()})
             _send(WA_BOT_TOKEN, target, f"💬 <b>Ответ от поддержки:</b>\n\n{text}")
             _send(WA_BOT_TOKEN, chat_id, "✅ Отправлено пользователю.")
             return
@@ -462,7 +467,7 @@ def _handle_message(msg):
         if state and state.get("editing_review"):
             _handle_review_edit_text(chat_id, text, state)
             return
-    _handle_user_message(chat_id, text)
+    _handle_user_message(chat_id, text, (msg.get("from") or {}).get("username"))
 
 
 # ─────────────────────────── вакансии/резюме: одобрить ДО публикации (бесплатно) ──────────────
@@ -637,6 +642,72 @@ def save_submission_fields(sub_id, new_fields):
     if not ref.get():
         return False
     ref.child("fields").set(new_fields)
+    return True
+
+
+def admin_update_pending_payment(sub_id, new_fields, new_tier=None):
+    """Правка ещё НЕ оплаченной заявки из веб-админки — поля +, по желанию,
+    смена тарифа (пересчитывает price/boost_price и подтягивает уже
+    выставленную сумму в pending_payment, если она ещё ждёт оплаты)."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "awaiting_payment":
+        return False
+    fields = dict(sub.get("fields") or {})
+    fields.update({k: v for k, v in new_fields.items() if v is not None})
+    updates = {"fields": fields}
+
+    if new_tier and new_tier in ("regular",) + BOOST_ORDER:
+        pricing = _deps["get_pricing"]()
+        if new_tier == "regular":
+            updates["tier"] = "regular"
+            updates["price"] = pricing["submit_price"]
+            updates["boost_price"] = None
+        else:
+            boost_price = pricing[f"{new_tier}_price"]
+            updates["tier"] = new_tier
+            updates["price"] = pricing["submit_price"] + boost_price
+            updates["boost_price"] = boost_price
+        tg_id = sub.get("tg_user_id")
+        if tg_id:
+            pending = db.reference(f"{_PENDING_PAY_REF}/{tg_id}").get()
+            if pending and pending.get("sub_id") == sub_id:
+                amount = _reserve_amount(tg_id, updates["price"])
+                db.reference(f"{_PENDING_PAY_REF}/{tg_id}").update({"price": updates["price"], "amount": amount})
+
+    ref.update(updates)
+    return True
+
+
+def admin_mark_paid_and_publish(sub_id):
+    """Админ вручную подтверждает оплату (без TxID) — когда автопоиск не
+    сработал, но факт оплаты проверен другим способом (например, в переписке
+    по «Связаться с поддержкой»). Переводит заявку в awaiting_review и сразу
+    публикует, тем же путём, что и настоящая on-chain оплата."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "awaiting_payment":
+        return False, "заявка уже обработана"
+    ref.update({"status": "awaiting_review", "confirmed_by": "admin_manual"})
+    tg_id = sub.get("tg_user_id")
+    if tg_id:
+        db.reference(f"{_PENDING_PAY_REF}/{tg_id}").delete()
+    return publish_studio(sub_id)
+
+
+def delete_pending_payment(sub_id):
+    """Удаляет неоплаченную заявку без публикации (снимает и связанный
+    ожидающий платёж, если он ещё висит на этого пользователя)."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "awaiting_payment":
+        return False
+    tg_id = sub.get("tg_user_id")
+    if tg_id:
+        pending = db.reference(f"{_PENDING_PAY_REF}/{tg_id}").get()
+        if pending and pending.get("sub_id") == sub_id:
+            db.reference(f"{_PENDING_PAY_REF}/{tg_id}").delete()
+    ref.delete()
     return True
 
 
@@ -826,10 +897,31 @@ def _process_txid(chat_id, txid):
     return True, None
 
 
-def _handle_user_message(chat_id, text):
+def _forward_user_message_to_admin(chat_id, text, username=None):
+    """Продолжение диалога с поддержкой — пользователь пишет ПОСЛЕ того, как
+    уже нажал «Связаться с поддержкой» (или получил ответ от админа).
+    Пересылаем в тот же личный чат админа с той же кнопкой «Ответить»."""
+    who = f"id {chat_id}" + (f" (@{username})" if username else "")
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, f"💬 <b>Сообщение от пользователя</b> ({who}):\n\n{text}",
+          buttons=[[{"text": "✍️ Ответить", "callback_data": f"replypay:{chat_id}"}]])
+    _send(WA_BOT_TOKEN, chat_id, "✅ Сообщение отправлено в поддержку.")
+
+
+def _handle_user_message(chat_id, text, username=None):
     if text == "/boost":
         _cmd_boost(chat_id)
         return
+
+    # Пока открыт диалог с поддержкой — обычный текст форвардим админу, а не
+    # пытаемся понять его как TxID. Настоящий хэш транзакции (ровно 64 hex-
+    # символа, например для буста — тот путь всё ещё только через бота)
+    # распознаём и проверяем как обычно, даже если диалог открыт.
+    thread = db.reference(f"{_SUPPORT_THREAD_REF}/{chat_id}").get()
+    thread_active = thread and thread.get("active") and (time.time() - thread.get("started_at", 0)) < SUPPORT_THREAD_TTL
+    if thread_active and not _TXID_RE.match(text.strip()):
+        _forward_user_message_to_admin(chat_id, text, username)
+        return
+
     _process_txid(chat_id, text)
 
 
@@ -855,7 +947,10 @@ def _confirm_payment():
 def _notify_payment_help(chat_id, username=None, note=None):
     """Общая логика «нужна помощь с оплатой» — и веб-кнопка «Написать нам»
     (report-payment-issue), и inline-кнопка «💬 Связаться с поддержкой» под
-    сообщением «платёж не найден» прямо в этом же Telegram-боте."""
+    сообщением «платёж не найден» прямо в этом же Telegram-боте. Открывает
+    диалог с поддержкой — дальнейшие сообщения этого пользователя боту
+    (кроме похожих на TxID) идут админу, пока диалог не протухнет."""
+    db.reference(f"{_SUPPORT_THREAD_REF}/{chat_id}").set({"active": True, "started_at": time.time()})
     pending = db.reference(f"{_PENDING_PAY_REF}/{chat_id}").get()
     who = f"id {chat_id}" + (f" (@{username})" if username else "")
     text = f"⚠️ <b>Нужна помощь с оплатой</b>\n\nОт: {who}\n"
