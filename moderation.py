@@ -85,6 +85,7 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
                  vacancies_ref=vacancies_ref, slot_key=slot_key, slot_count=slot_count)
     app.add_url_rule("/api/submit-studio", "submit_studio", _submit_studio, methods=["POST"])
     app.add_url_rule("/api/confirm-payment", "confirm_payment", _confirm_payment, methods=["POST"])
+    app.add_url_rule("/api/report-payment-issue", "report_payment_issue", _report_payment_issue, methods=["POST"])
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
     app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
@@ -798,16 +799,47 @@ def _handle_user_message(chat_id, text):
 
 
 def _confirm_payment():
-    """POST /api/confirm-payment — кнопка «Я оплатил» на сайте: TxID вводится
-    прямо в форме, без перехода в Telegram. Та же проверка, что у бота."""
+    """POST /api/confirm-payment — кнопка «Подтвердить оплату» на сайте: TxID
+    вводить не нужно (как у VideoRils) — сами ищем подходящий входящий платёж
+    на кошелёк. Фронт опрашивает этот эндпоинт, пока не найдёт (или не бросит)."""
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
     tg_id = auth.get("id")
-    txid = (data.get("txid") or "").strip()
-    if not tg_id or not txid:
+    if not tg_id:
         return jsonify({"ok": False, "error": "fields"}), 400
+    pending = db.reference(f"{_PENDING_PAY_REF}/{tg_id}").get()
+    if not pending or not pending.get("amount"):
+        return jsonify({"ok": False, "error": "no_pending"})
+    txid = _find_incoming_payment(pending["amount"])
+    if not txid:
+        return jsonify({"ok": False, "error": "not_found"})
     ok, err = _process_txid(tg_id, txid)
     return jsonify({"ok": ok, "error": err})
+
+
+def _report_payment_issue():
+    """POST /api/report-payment-issue — если автопоиск не находит платёж,
+    кнопка «Написать нам» на сайте шлёт админу контекст (кто, сколько,
+    заявка) + сообщение от пользователя, чтобы проверить и подтвердить
+    вручную через веб-админку/Telegram."""
+    data = request.get_json(force=True, silent=True) or {}
+    auth = data.get("auth") or {}
+    tg_id = auth.get("id")
+    note = (data.get("message") or "").strip()[:500]
+    if not tg_id:
+        return jsonify({"ok": False, "error": "fields"}), 400
+
+    pending = db.reference(f"{_PENDING_PAY_REF}/{tg_id}").get()
+    username = auth.get("username")
+    who = f"id {tg_id}" + (f" (@{username})" if username else "")
+    text = f"⚠️ <b>Платёж не находится автоматически</b>\n\nОт: {who}\n"
+    if pending:
+        text += f"Ожидаемая сумма: {pending.get('amount')} USDT · тип: {pending.get('kind')}\n"
+    if note:
+        text += f"\nСообщение от пользователя:\n{note}"
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text)
+    _send(WA_BOT_TOKEN, tg_id, "✅ Сообщение отправлено администратору — проверим оплату вручную и ответим здесь, в Telegram.")
+    return jsonify({"ok": True})
 
 
 def _cmd_boost(chat_id):
@@ -853,6 +885,36 @@ def _verify_tx_onchain(txid, min_amount):
         return None
     except Exception as e:
         print(f"[pay] ошибка проверки txid={txid[:10]}: {e}")
+        return None
+
+
+def _find_incoming_payment(min_amount):
+    """Автопоиск платежа без TxID от пользователя — как у VideoRils: смотрим
+    последние входящие USDT-переводы на наш кошелёк и ищем подходящую сумму,
+    которая ещё не была засчитана. Возвращает txid или None."""
+    url = f"https://api.trongrid.io/v1/accounts/{USDT_WALLET}/transactions/trc20"
+    params = {"limit": 30, "contract_address": USDT_CONTRACT, "only_to": "true"}
+    headers = {"TRON-PRO-API-KEY": TRONGRID_API_KEY} if TRONGRID_API_KEY else {}
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=20)
+        if r.status_code != 200:
+            print(f"[pay] TronGrid HTTP {r.status_code} при поиске входящих")
+            return None
+        for tx in (r.json() or {}).get("data", []) or []:
+            if tx.get("to") != USDT_WALLET:
+                continue
+            txid = tx.get("transaction_id")
+            if not txid or _tx_already_used(txid):
+                continue
+            try:
+                paid = int(tx.get("value", "0")) / 1_000_000.0
+            except (TypeError, ValueError):
+                continue
+            if paid >= (min_amount - TOLERANCE_UNDER):
+                return txid
+        return None
+    except Exception as e:
+        print(f"[pay] ошибка поиска входящих платежей: {e}")
         return None
 
 
