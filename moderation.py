@@ -322,7 +322,8 @@ def _submit_studio():
           f"💳 Тариф: {TIER_LABEL.get(tier, 'Обычное')}{breakdown}{note}\n\n"
           f"Переведите <b>{amount} USDT</b> в сети <b>TRC-20 (Tron)</b> на адрес:\n"
           f"<code>{USDT_WALLET}</code>\n\n"
-          f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
+          f"⚠️ Сумма с уникальными копейками — переведите {amount} (кошелёк может списать чуть больше, "
+          f"это комиссия сети Tether ≈$1.5, не наша). Небольшая неточность не страшна, оплата пройдёт.\n"
           f"После оплаты пришлите сюда одним сообщением хэш транзакции (TxID).")
     return jsonify({"ok": True, "amount": amount, "address": USDT_WALLET, "tier": tier, "price": price, "capped": capped})
 
@@ -747,7 +748,8 @@ def _handle_user_callback(cb):
               f"💳 Буст: {BOOST_BUTTON_LABEL[tier]} — {price} USDT/мес\n\n"
               f"Переведите <b>{amount} USDT</b> в сети <b>TRC-20 (Tron)</b> на адрес:\n"
               f"<code>{USDT_WALLET}</code>\n\n"
-              f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
+              f"⚠️ Сумма с уникальными копейками — переведите {amount} (кошелёк может списать чуть больше, "
+          f"это комиссия сети Tether ≈$1.5, не наша). Небольшая неточность не страшна, оплата пройдёт.\n"
               f"После оплаты пришлите сюда одним сообщением хэш транзакции (TxID).")
         _answer_cb(WA_BOT_TOKEN, cb_id, "Ждём оплату")
         return
