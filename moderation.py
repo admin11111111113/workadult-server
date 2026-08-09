@@ -94,6 +94,7 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     app.add_url_rule("/api/confirm-payment", "confirm_payment", _confirm_payment, methods=["POST"])
     app.add_url_rule("/api/report-payment-issue", "report_payment_issue", _report_payment_issue, methods=["POST"])
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
+    app.add_url_rule("/api/vacancy-status", "vacancy_status", _vacancy_status, methods=["GET"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
     app.add_url_rule("/api/submit-review", "submit_review", _submit_review, methods=["POST"])
     app.add_url_rule("/api/reviews", "api_reviews", _api_reviews, methods=["GET"])
@@ -357,6 +358,34 @@ def _submit_studio():
     return jsonify({"ok": True, "amount": amount, "address": USDT_WALLET, "tier": tier, "price": price, "capped": capped})
 
 
+def _vacancy_cooldown_status(tg_id):
+    """Тарифный статус кулдауна публикации вакансии для владельца (по TG ID) —
+    используется и при самой отправке, и в /api/vacancy-status (показать
+    заранее на странице, до попытки отправить)."""
+    vip = _tg_tier(tg_id) in ("gold", "home")
+    cooldown = VACANCY_POST_COOLDOWN_VIP if vip else VACANCY_POST_COOLDOWN
+    last = db.reference(f"{_VACANCY_LAST_POST_REF}/{tg_id}").get() if tg_id else None
+    remaining = (cooldown - (time.time() - last)) if last else 0
+    can_post = remaining <= 0
+    return {
+        "can_post": can_post,
+        "wait_days": (int(remaining / 86400) + 1) if remaining > 0 else 0,
+        "vip": vip,
+        "posts_per_week": 2 if vip else 1,
+        "next_allowed_at": (last + cooldown) if (last and not can_post) else None,
+    }
+
+
+def _vacancy_status():
+    """GET /api/vacancy-status?tg_id=... — показать студии на странице
+    вакансий заранее, можно ли публиковать прямо сейчас или сколько ждать,
+    без попытки реальной отправки."""
+    tg_id = request.args.get("tg_id", type=int)
+    if not tg_id:
+        return jsonify({"ok": False, "error": "auth"}), 400
+    return jsonify({"ok": True, **_vacancy_cooldown_status(tg_id)})
+
+
 def _submit_vacancy():
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
@@ -372,14 +401,11 @@ def _submit_vacancy():
         return jsonify({"ok": False, "error": "fields"}), 400
 
     tg_id = auth.get("id")
-    vip = _tg_tier(tg_id) in ("gold", "home")
-    cooldown = VACANCY_POST_COOLDOWN_VIP if vip else VACANCY_POST_COOLDOWN
-    last = db.reference(f"{_VACANCY_LAST_POST_REF}/{tg_id}").get() if tg_id else None
-    if last and time.time() - last < cooldown:
-        wait_days = int((cooldown - (time.time() - last)) / 86400) + 1
-        limit_text = "не чаще 2 раз в неделю" if vip else "не чаще раза в неделю"
+    status = _vacancy_cooldown_status(tg_id)
+    if not status["can_post"]:
+        limit_text = "не чаще 2 раз в неделю" if status["vip"] else "не чаще раза в неделю"
         return jsonify({"ok": False, "error": "cooldown",
-                        "message": f"Можно публиковать {limit_text}. Попробуйте через {wait_days} дн."}), 429
+                        "message": f"Можно публиковать {limit_text}. Попробуйте через {status['wait_days']} дн."}), 429
 
     sub_id, sub = _new_submission("vacancy", fields, auth)
     if sub_id is None:
