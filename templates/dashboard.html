@@ -200,6 +200,41 @@
         <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
         <div class="cat-contacts">{{ f.contact }}{% if f.phone %} · {{ f.phone }}{% endif %}</div>
         <div style="font-size:11px;color:#666;margin-top:6px">Telegram id: {{ s.tg_user_id }}{% if s.tg_username %} (@{{ s.tg_username }}){% endif %}</div>
+        <div class="cat-actions">
+          <form method="post" action="/admin/pending-payment/{{ s.key }}/publish" style="display:inline" onsubmit="return confirm('Подтвердить оплату вручную и опубликовать? Используйте только если точно убедились, что деньги пришли.')">
+            <button class="btn btn-save" type="submit">✅ Опубликовать (оплата вручную)</button>
+          </form>
+          <button class="btn btn-move" type="button" onclick="toggleSlot('pp-{{ s.key }}')">✏️ Изменить / тариф</button>
+          <form method="post" action="/admin/pending-payment/{{ s.key }}/delete" style="display:inline" onsubmit="return confirm('Удалить заявку без публикации?')">
+            <button class="btn btn-delete" type="submit">🗑 Удалить</button>
+          </form>
+        </div>
+        <div class="slot-body" id="pp-{{ s.key }}" style="margin-top:12px">
+          <form method="post" action="/admin/pending-payment/{{ s.key }}/save">
+            <div class="form-grid">
+              <div class="form-group"><label>Название</label><input name="name" value="{{ f.name }}"></div>
+              <div class="form-group"><label>Город</label><input name="city" value="{{ f.city }}"></div>
+              <div class="form-group"><label>% выплат</label><input name="percent" value="{{ f.percent }}"></div>
+              <div class="form-group"><label>Контакт</label><input name="contact" value="{{ f.contact }}"></div>
+              <div class="form-group"><label>Телефон</label><input name="phone" value="{{ f.phone }}"></div>
+              <div class="form-group"><label>Сайт</label><input name="url" value="{{ f.url }}"></div>
+              <div class="form-group full"><label>Описание</label><textarea name="desc">{{ f.desc }}</textarea></div>
+              <div class="form-group full">
+                <label>Тариф (пересчитает цену к оплате)</label>
+                <select name="tier">
+                  <option value="regular" {% if s.tier == 'regular' %}selected{% endif %}>Обычное (без буста) — ${{ pricing.submit_price }}</option>
+                  {% for t in boost_tiers %}
+                  <option value="{{ t }}" {% if s.tier == t %}selected{% endif %}>{{ boost_labels.get(t, t) }} — ${{ pricing.submit_price }}+${{ pricing[t + '_price'] }}/мес</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="actions-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9aa0aa"><input type="checkbox" name="publish"> и сразу опубликовать (оплата вручную)</label>
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
+          </form>
+        </div>
       </div>
       {% endfor %}
     </div>

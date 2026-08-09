@@ -804,6 +804,38 @@ def admin_review_delete(sub_id):
     moderation.reject_paid(sub_id)
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/admin/pending-payment/<sub_id>/publish", methods=["POST"])
+@_require_admin
+def admin_pending_payment_publish(sub_id):
+    """Админ вручную подтверждает оплату (без TxID) — например, после
+    переписки в поддержке убедился, что деньги пришли."""
+    moderation.admin_mark_paid_and_publish(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/pending-payment/<sub_id>/save", methods=["POST"])
+@_require_admin
+def admin_pending_payment_save(sub_id):
+    new_fields = {
+        "name": request.form.get("name", "").strip()[:120],
+        "city": request.form.get("city", "").strip()[:80],
+        "percent": request.form.get("percent", "").strip()[:60],
+        "contact": request.form.get("contact", "").strip()[:200],
+        "phone": request.form.get("phone", "").strip()[:40],
+        "url": request.form.get("url", "").strip()[:300],
+        "desc": request.form.get("desc", "").strip()[:600],
+    }
+    new_tier = request.form.get("tier", "").strip() or None
+    moderation.admin_update_pending_payment(sub_id, new_fields, new_tier)
+    if request.form.get("publish") == "on":
+        moderation.admin_mark_paid_and_publish(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/pending-payment/<sub_id>/delete", methods=["POST"])
+@_require_admin
+def admin_pending_payment_delete(sub_id):
+    moderation.delete_pending_payment(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
 @app.route("/admin/review-free/<sub_id>/approve", methods=["POST"])
 @_require_admin
 def admin_review_free_approve(sub_id):
