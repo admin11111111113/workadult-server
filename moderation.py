@@ -74,6 +74,7 @@ _TXID_RE = re.compile(r"^[0-9a-fA-F]{64}$")         # хэш транзакци�
 _WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
 _VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> когда публиковал вакансию последний раз
 VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю на студию
+_REVIEWS_REF = "/workadult_reviews"                 # отзывы о студиях, 1-5 звёзд, на модерации/опубликованные
 
 BOOST_ORDER = ("bronze", "silver", "gold", "home")   # порядок кнопок, дешёвый → дорогой
 BOOST_BUTTON_LABEL = {"bronze": "🥉 Бронза", "silver": "🥈 Серебро",
@@ -92,6 +93,8 @@ def init_app(app, get_pricing, listings_ref, vacancies_ref, slot_key, slot_count
     app.add_url_rule("/api/report-payment-issue", "report_payment_issue", _report_payment_issue, methods=["POST"])
     app.add_url_rule("/api/submit-vacancy", "submit_vacancy", _submit_vacancy, methods=["POST"])
     app.add_url_rule("/api/submit-resume", "submit_resume", _submit_resume, methods=["POST"])
+    app.add_url_rule("/api/submit-review", "submit_review", _submit_review, methods=["POST"])
+    app.add_url_rule("/api/reviews", "api_reviews", _api_reviews, methods=["GET"])
     app.add_url_rule("/tg/webhook", "tg_webhook", _webhook, methods=["POST"])
     app.add_url_rule("/tg/cleanup-test-submissions", "tg_cleanup_test", _cleanup_test_submissions, methods=["POST"])
 
@@ -393,6 +396,82 @@ def _notify_admin_pending(sub_id, sub):
         db.reference(f"{_SUBMISSIONS_REF}/{sub_id}/admin_chat_msg_id").set(msg_id)
 
 
+def _submit_review():
+    """POST /api/submit-review — отзыв о студии, 1-5 звёзд (0 не допускается),
+    без входа через Telegram — имя по желанию, иначе «Аноним». Уходит на
+    модерацию, публикуется вручную из вкладки «Отзывы» в админке."""
+    data = request.get_json(force=True, silent=True) or {}
+    studio_id = (data.get("studio_id") or "").strip()[:80]
+    studio_name = (data.get("studio_name") or "").strip()[:120]
+    text = (data.get("text") or "").strip()[:800]
+    author = (data.get("author") or "").strip()[:80] or "Аноним"
+    try:
+        rating = int(data.get("rating"))
+    except (TypeError, ValueError):
+        rating = 0
+    if not studio_id or not text or rating < 1 or rating > 5:
+        return jsonify({"ok": False, "error": "fields"}), 400
+
+    rec = {
+        "studio_id": studio_id, "studio_name": studio_name, "rating": rating,
+        "text": text, "author": author, "status": "pending",
+        "created_at": datetime.now().isoformat(),
+    }
+    ref = db.reference(_REVIEWS_REF).push(rec)
+    _notify_admin_review_item(ref.key, rec)
+    return jsonify({"ok": True})
+
+
+def _notify_admin_review_item(key, rec):
+    stars = "★" * rec["rating"] + "☆" * (5 - rec["rating"])
+    text = (f"📝 <b>Новый отзыв</b>\n\n{stars}\nСтудия: {rec.get('studio_name') or rec.get('studio_id')}\n"
+            f"От: {rec.get('author')}\n\n{rec.get('text')}")
+    buttons = [
+        [{"text": "✅ Опубликовать", "callback_data": f"revapp:{key}"},
+         {"text": "❌ Отклонить", "callback_data": f"revrej:{key}"}],
+    ]
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text, buttons)
+
+
+def _api_reviews():
+    """GET /api/reviews — только опубликованные, для показа на сайте."""
+    raw = db.reference(_REVIEWS_REF).get() or {}
+    out = []
+    for key, rec in raw.items():
+        if isinstance(rec, dict) and rec.get("status") == "approved":
+            out.append({
+                "id": key, "studio_id": rec.get("studio_id"), "rating": rec.get("rating"),
+                "text": rec.get("text"), "author": rec.get("author"),
+            })
+    return jsonify({"ok": True, "reviews": out})
+
+
+def admin_review_item_approve(key):
+    ref = db.reference(f"{_REVIEWS_REF}/{key}")
+    rec = ref.get()
+    if not rec:
+        return False
+    ref.update({"status": "approved"})
+    return True
+
+
+def admin_review_item_save(key, new_fields):
+    ref = db.reference(f"{_REVIEWS_REF}/{key}")
+    rec = ref.get()
+    if not rec:
+        return False
+    ref.update(new_fields)
+    return True
+
+
+def admin_review_item_reject(key):
+    ref = db.reference(f"{_REVIEWS_REF}/{key}")
+    if not ref.get():
+        return False
+    ref.delete()
+    return True
+
+
 def _notify_admin_review(sub_id, sub):
     """Студия оплачена — финальное решение админа: опубликовать / отредактировать
     и опубликовать / удалить. Деньги уже собраны на этом шаге."""
@@ -437,6 +516,8 @@ def _webhook():
                 _handle_user_callback(cb)
             elif data.startswith("replypay:"):
                 _handle_replypay_callback(cb)
+            elif data.startswith(("revapp:", "revrej:")):
+                _handle_review_item_callback(cb)
             return jsonify({"ok": True})
         msg = update.get("message")
         if msg:
@@ -528,6 +609,38 @@ def _handle_replypay_callback(cb):
     db.reference(f"{_ADMIN_STATE_REF}/{admin_chat_id}").set({"replying_to": target_chat_id})
     _send(WA_BOT_TOKEN, admin_chat_id, "✍️ Напишите ответ пользователю следующим сообщением.")
     _answer_cb(WA_BOT_TOKEN, cb_id, "Жду ответ")
+
+
+def _handle_review_item_callback(cb):
+    """✅ Опубликовать / ❌ Отклонить под уведомлением о новом отзыве."""
+    data = cb.get("data", "")
+    cb_id = cb.get("id")
+    chat_id = cb["message"]["chat"]["id"]
+    msg_id = cb["message"]["message_id"]
+    if chat_id != _admin_chat_id():
+        _answer_cb(WA_BOT_TOKEN, cb_id, "недоступно")
+        return
+    try:
+        action, key = data.split(":", 1)
+    except ValueError:
+        _answer_cb(WA_BOT_TOKEN, cb_id, "ошибка")
+        return
+    rec = db.reference(f"{_REVIEWS_REF}/{key}").get()
+    if not rec:
+        _answer_cb(WA_BOT_TOKEN, cb_id, "отзыв не найден")
+        return
+    if rec.get("status") != "pending":
+        _answer_cb(WA_BOT_TOKEN, cb_id, "уже обработан")
+        return
+
+    if action == "revapp":
+        admin_review_item_approve(key)
+        _edit(WA_BOT_TOKEN, chat_id, msg_id, f"✅ Опубликован\n\n{rec.get('text', '')}")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Опубликован")
+    elif action == "revrej":
+        admin_review_item_reject(key)
+        _edit(WA_BOT_TOKEN, chat_id, msg_id, f"❌ Отклонён\n\n{rec.get('text', '')}")
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Отклонён")
 
 
 def _handle_admin_edit_text(chat_id, text, state):

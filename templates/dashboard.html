@@ -173,6 +173,7 @@
     <button type="button" class="tab-btn" data-tab="home" onclick="showTab('home')">🏠 Главная страница</button>
     <button type="button" class="tab-btn" data-tab="vac" onclick="showTab('vac')">💼 Вакансии</button>
     <button type="button" class="tab-btn" data-tab="catalog" onclick="showTab('catalog')">🏙️ Каталог студий</button>
+    <button type="button" class="tab-btn" data-tab="reviews" onclick="showTab('reviews')">📝 Отзывы{% if pending_reviews %} <span class="badge active">{{ pending_reviews|length }}</span>{% endif %}</button>
   </div>
 
   <div class="tab-panel" id="tab-overview">
@@ -193,8 +194,8 @@
       {% set f = s.fields or {} %}
       <div class="cat-card">
         <div class="cat-badge">
-          <span>{{ moderation_tier_label.get(s.tier, s.tier) }} · ${{ s.price }} к оплате</span>
-          <span>{{ s.created_at or '' }}</span>
+          <span>{{ moderation_tier_label.get(s.tier, s.tier) }} · ${{ s.price }}</span>
+          <span>{{ (s.created_at or '').replace('T', ' ')[:16] }}</span>
         </div>
         <div class="cat-name">{{ f.name }}</div>
         <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
@@ -248,7 +249,7 @@
       <div class="cat-card {% if s.tier in ('gold','silver','bronze') %}tier-{{ s.tier }}{% endif %}">
         <div class="cat-badge {% if s.tier in ('gold','silver','home') %}premium{% endif %}">
           <span>{{ moderation_tier_label.get(s.tier, s.tier) }} · ${{ s.price }}</span>
-          <span>{{ s.created_at or '' }}</span>
+          <span>{{ (s.created_at or '').replace('T', ' ')[:16] }}</span>
         </div>
         <div class="cat-name">{{ f.name }}</div>
         <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
@@ -574,6 +575,62 @@
       <div style="font-size:13px;color:#9aa0aa;margin:8px 0 16px" id="studioGridSummary"></div>
       <div class="cat-grid" id="studioGrid"></div>
     </div>
+  </div>
+
+  <!-- ОТЗЫВЫ -->
+  <div class="section-block tab-panel" id="tab-reviews">
+    <h2>📝 Отзывы</h2>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Отзывы о студиях (1-5 звёзд) со страниц студий — на модерации, до публикации. Можно поправить текст/оценку и опубликовать, или отклонить.</div>
+
+    {% if not pending_reviews %}
+    <div class="cat-empty">Нет новых отзывов на рассмотрении</div>
+    {% endif %}
+
+    {% if pending_reviews %}
+    <div class="cat-grid">
+      {% for r in pending_reviews %}
+      <div class="cat-card">
+        <div class="cat-badge">
+          <span>{{ '★' * r.rating }}{{ '☆' * (5 - r.rating) }}</span>
+          <span>{{ (r.created_at or '').replace('T', ' ')[:16] }}</span>
+        </div>
+        <div class="cat-name">{{ r.studio_name or r.studio_id }}</div>
+        <div class="cat-contacts">{{ r.author }}</div>
+        <div class="cat-desc">{{ r.text }}</div>
+        <div class="cat-actions">
+          <form method="post" action="/admin/review-item/{{ r.key }}/approve" style="display:inline">
+            <button class="btn btn-save" type="submit">✅ Опубликовать</button>
+          </form>
+          <button class="btn btn-move" type="button" onclick="toggleSlot('rv-{{ r.key }}')">✏️ Изменить</button>
+          <form method="post" action="/admin/review-item/{{ r.key }}/reject" style="display:inline" onsubmit="return confirm('Отклонить отзыв?')">
+            <button class="btn btn-delete" type="submit">🗑 Отклонить</button>
+          </form>
+        </div>
+        <div class="slot-body" id="rv-{{ r.key }}" style="margin-top:12px">
+          <form method="post" action="/admin/review-item/{{ r.key }}/save">
+            <div class="form-grid">
+              <div class="form-group"><label>Студия</label><input name="studio_name" value="{{ r.studio_name }}"></div>
+              <div class="form-group"><label>Автор</label><input name="author" value="{{ r.author }}"></div>
+              <div class="form-group">
+                <label>Оценка</label>
+                <select name="rating">
+                  {% for n in [1,2,3,4,5] %}
+                  <option value="{{ n }}" {% if r.rating == n %}selected{% endif %}>{{ '★' * n }}{{ '☆' * (5 - n) }} ({{ n }})</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-group full"><label>Текст</label><textarea name="text">{{ r.text }}</textarea></div>
+            </div>
+            <div class="actions-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9aa0aa"><input type="checkbox" name="publish" checked> и сразу опубликовать</label>
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   <!-- НА ГЛАВНОЙ -->

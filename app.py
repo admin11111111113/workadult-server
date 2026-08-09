@@ -412,6 +412,14 @@ def admin_dashboard():
     review_free.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     pending_payment.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
+    # Отзывы о студиях: на рассмотрении (1-5 звёзд, редактировать/опубликовать/отклонить).
+    raw_reviews = db.reference(moderation._REVIEWS_REF).get() or {}
+    pending_reviews = []
+    for key, rec in raw_reviews.items():
+        if isinstance(rec, dict) and rec.get("status") == "pending":
+            pending_reviews.append({"key": key, **rec})
+    pending_reviews.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
@@ -421,7 +429,7 @@ def admin_dashboard():
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
                            studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS,
                            review_studios=review_studios, review_free=review_free,
-                           pending_payment=pending_payment,
+                           pending_payment=pending_payment, pending_reviews=pending_reviews,
                            moderation_tier_label=moderation.TIER_LABEL)
 
 @app.route("/admin/pricing/save", methods=["POST"])
@@ -846,6 +854,37 @@ def admin_review_free_approve(sub_id):
 @_require_admin
 def admin_review_free_reject(sub_id):
     moderation.reject_pending(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review-item/<key>/approve", methods=["POST"])
+@_require_admin
+def admin_review_item_approve(key):
+    moderation.admin_review_item_approve(key)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review-item/<key>/save", methods=["POST"])
+@_require_admin
+def admin_review_item_save(key):
+    try:
+        rating = int(request.form.get("rating", 0))
+    except ValueError:
+        rating = 0
+    new_fields = {
+        "studio_name": request.form.get("studio_name", "").strip()[:120],
+        "author": request.form.get("author", "").strip()[:80] or "Аноним",
+        "text": request.form.get("text", "").strip()[:800],
+    }
+    if 1 <= rating <= 5:
+        new_fields["rating"] = rating
+    moderation.admin_review_item_save(key, new_fields)
+    if request.form.get("publish") == "on":
+        moderation.admin_review_item_approve(key)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/review-item/<key>/reject", methods=["POST"])
+@_require_admin
+def admin_review_item_reject(key):
+    moderation.admin_review_item_reject(key)
     return redirect(url_for("admin_dashboard"))
 
 
