@@ -871,6 +871,19 @@ def admin_review_free_reject(sub_id):
     moderation.reject_pending(sub_id)
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/admin/review-free/<sub_id>/save", methods=["POST"])
+@_require_admin
+def admin_review_free_save(sub_id):
+    new_fields = {
+        "org": request.form.get("org"), "title": request.form.get("title"),
+        "salary": request.form.get("salary"), "desc": request.form.get("desc"),
+        "contact": request.form.get("contact"), "experience": request.form.get("experience"),
+    }
+    moderation.edit_free_submission(sub_id, new_fields)
+    if request.form.get("publish"):
+        moderation.approve_free(sub_id)
+    return redirect(url_for("admin_dashboard"))
+
 @app.route("/admin/review-item/<key>/approve", methods=["POST"])
 @_require_admin
 def admin_review_item_approve(key):

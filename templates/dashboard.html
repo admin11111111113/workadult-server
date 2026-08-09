@@ -303,8 +303,29 @@
           <form method="post" action="/admin/review-free/{{ s.key }}/approve" style="display:inline">
             <button class="btn btn-save" type="submit">✅ Одобрить</button>
           </form>
+          <button class="btn btn-move" type="button" onclick="toggleSlot('rf-{{ s.key }}')">✏️ Изменить</button>
           <form method="post" action="/admin/review-free/{{ s.key }}/reject" style="display:inline" onsubmit="return confirm('Отклонить заявку?')">
             <button class="btn btn-delete" type="submit">✖ Отклонить</button>
+          </form>
+        </div>
+        <div class="slot-body" id="rf-{{ s.key }}" style="margin:0 16px 16px">
+          <form method="post" action="/admin/review-free/{{ s.key }}/save">
+            <div class="form-grid">
+              {% if s.type == 'vacancy' %}
+              <div class="form-group"><label>Студия</label><input name="org" value="{{ f.org or '' }}"></div>
+              <div class="form-group"><label>Вакансия</label><input name="title" value="{{ f.title or '' }}"></div>
+              <div class="form-group"><label>Условия</label><input name="salary" value="{{ f.salary or '' }}"></div>
+              <div class="form-group full"><label>Город/формат</label><input name="desc" value="{{ f.desc or '' }}"></div>
+              {% else %}
+              <div class="form-group full"><label>Опыт</label><textarea name="experience">{{ f.experience or '' }}</textarea></div>
+              <div class="form-group"><label>Зарплата</label><input name="salary" value="{{ f.salary or '' }}"></div>
+              {% endif %}
+              <div class="form-group"><label>Контакт</label><input name="contact" value="{{ f.contact or '' }}"></div>
+            </div>
+            <div class="actions-row">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9aa0aa"><input type="checkbox" name="publish"> и сразу одобрить</label>
+              <button class="btn btn-save" type="submit">💾 Сохранить</button>
+            </div>
           </form>
         </div>
       </div>

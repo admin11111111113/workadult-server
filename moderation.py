@@ -712,6 +712,19 @@ def _handle_admin_edit_text(chat_id, text, state):
           f"✅ Отредактировано и опубликовано\n\n{_fmt_fields(sub['type'], f)}")
 
 
+def edit_free_submission(sub_id, new_fields):
+    """Правка ещё не одобренной бесплатной заявки (вакансия/резюме) из веб-админки —
+    поля, а не одобрение/отклонение (для них уже есть approve_free/reject_pending)."""
+    ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
+    sub = ref.get()
+    if not sub or sub.get("status") != "pending":
+        return False
+    fields = dict(sub.get("fields") or {})
+    fields.update({k: v for k, v in new_fields.items() if v is not None})
+    ref.update({"fields": fields})
+    return True
+
+
 def approve_free(sub_id):
     """Публикует бесплатную заявку (вакансия/резюме). True при успехе."""
     ref = db.reference(f"{_SUBMISSIONS_REF}/{sub_id}")
