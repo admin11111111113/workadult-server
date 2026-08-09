@@ -429,7 +429,7 @@ def _webhook():
                 _handle_admin_callback(cb)
             elif data.startswith(("pub:", "pedit:", "pdel:")):
                 _handle_review_callback(cb)
-            elif data.startswith("boostpick:"):
+            elif data.startswith("boostpick:") or data == "support":
                 _handle_user_callback(cb)
             return jsonify({"ok": True})
         msg = update.get("message")
