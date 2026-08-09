@@ -102,9 +102,9 @@ def _get_demo():
     return {"studios": studios, "vacancies": vacancies}
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
-CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude")
+CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")
 CATALOG_FMT_LABELS = {"studio": "В студии", "home": "Из дома", "pair": "Парой",
-                      "guys": "Для парней", "nonnude": "Non Nude"}
+                      "guys": "Для парней", "nonnude": "Non Nude", "trans": "Принимаем транссексуалов"}
 
 # Особенности студии (для платных мест workadult_studios) — чекбоксы в форме
 # «По городам» и в /api/listings. Форматы работы используют тот же словарь

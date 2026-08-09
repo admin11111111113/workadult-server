@@ -76,6 +76,7 @@ _VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> ког�
 VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю — обычным/бронза/серебро
 VACANCY_POST_COOLDOWN_VIP = 3.5 * 24 * 3600         # 2 вакансии в неделю — золото и «на главной» (буст активен)
 _REVIEWS_REF = "/workadult_reviews"                 # отзывы о студиях, 1-5 звёзд, на модерации/опубликованные
+_VALID_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")  # держать в синхроне с CATALOG_FORMATS в app.py
 
 BOOST_ORDER = ("bronze", "silver", "gold", "home")   # порядок кнопок, дешёвый → дорогой
 BOOST_BUTTON_LABEL = {"bronze": "🥉 Бронза", "silver": "🥈 Серебро",
@@ -309,6 +310,10 @@ def _submit_studio():
         "social_instagram": (form.get("social_instagram") or "").strip()[:120],
         "social_vk": (form.get("social_vk") or "").strip()[:120],
     }
+    fmt_raw = form.get("fmt") or []
+    if not isinstance(fmt_raw, list):
+        fmt_raw = [fmt_raw]
+    fields["formats"] = [f for f in fmt_raw if f in _VALID_FORMATS]
     # Только для тарифа "на главной" — что рекламируем: карточку студии
     # или объявление о вакансии (обе тем же слотом/тем же $100/мес).
     promo_type = (form.get("promo_type") or "").strip()
@@ -869,7 +874,8 @@ def publish_studio(sub_id):
 
     photo = f.get("photo", "")
     expires_at = None if tier == "regular" else time.time() + (30 * 24 * 3600)
-    db.reference(f"{listings_ref}/{slot_key(free_n)}").set({
+    picked_fmt = f.get("formats") or []
+    rec = {
         "name": f.get("name", ""), "city": f.get("city", ""), "desc": f.get("desc", ""),
         "photos": [photo] if photo else [], "cover_photo": photo, "photo": photo,
         "contacts": f.get("contact", ""), "phone": f.get("phone", ""), "url": f.get("url", ""),
@@ -880,7 +886,10 @@ def publish_studio(sub_id):
         "boost_price": boost_price,
         "clicks": 0, "owner_tg_id": sub["tg_user_id"],
         "promo_type": f.get("promo_type") or "studio",
-    })
+    }
+    for fmt in _VALID_FORMATS:
+        rec["fmt_" + fmt] = fmt in picked_fmt
+    db.reference(f"{listings_ref}/{slot_key(free_n)}").set(rec)
     ref.update({"status": "published", "published_slot": free_n})
     _send(WA_BOT_TOKEN, sub["tg_user_id"], "🎉 Ваше объявление опубликовано на сайте!")
     if tier == "regular":
