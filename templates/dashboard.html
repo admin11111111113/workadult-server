@@ -576,6 +576,21 @@
 
 </div>
 
+<div id="cropModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999;align-items:center;justify-content:center;">
+  <div style="background:#1a1d24;border:1px solid #262a33;border-radius:14px;padding:24px;max-width:460px;width:92%;">
+    <div style="font-weight:700;margin-bottom:14px;color:#fff">Кроп фото — 800×500</div>
+    <div id="cropViewport" style="width:100%;max-width:400px;aspect-ratio:8/5;overflow:hidden;position:relative;border-radius:10px;border:1px solid #262a33;background:#000;cursor:grab;margin:0 auto;touch-action:none;">
+      <img id="cropImgEl" alt="" style="position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none;pointer-events:none;">
+    </div>
+    <input type="range" id="cropZoom" min="1" max="3" step="0.01" value="1" style="width:100%;max-width:400px;margin-top:10px;display:block;margin-left:auto;margin-right:auto;accent-color:#e91e8c">
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:center">
+      <button type="button" class="btn btn-save" onclick="applyDemoPhotoCrop()">✓ Готово</button>
+      <button type="button" class="btn btn-hide" onclick="closeCropModal()">Отмена</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="cropFileInput" accept="image/*" style="display:none">
+
 <script>
 // Данные слотов из сервера
 const ALL_SLOTS = {{ slots | tojson }};
@@ -706,7 +721,18 @@ function renderDemoStudios() {
       <div class="form-group"><label>Процент</label><input data-idx="${i}" data-f="percent" value="${escHtml(s.percent)}"></div>
       <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(s.contact)}"></div>
       <div class="form-group full"><label>Описание</label><textarea data-idx="${i}" data-f="desc">${escHtml(s.desc)}</textarea></div>
-      <div class="form-group full"><label>Фото (ссылка)</label><input data-idx="${i}" data-f="photo" value="${escHtml(s.photo)}"></div>
+      <div class="form-group full">
+        <label>Фото / логотип</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <button type="button" class="btn btn-move" onclick="openDemoPhotoCrop(${i})">📷 Загрузить фото</button>
+          ${s.photo ? `<img src="${escHtml(s.photo)}" style="height:44px;border-radius:6px;border:1px solid #262a33" onerror="this.style.display='none'">` : ''}
+          ${s.photo ? `<button type="button" class="btn btn-hide" onclick="removeDemoPhoto(${i})">✕ Убрать фото</button>` : ''}
+        </div>
+        <details style="font-size:12px">
+          <summary style="cursor:pointer;color:#666">или вставить ссылку на изображение</summary>
+          <input data-idx="${i}" data-f="photo" value="${escHtml(s.photo)}" style="margin-top:6px" placeholder="https://...">
+        </details>
+      </div>
       <div class="form-group full"><button type="button" class="btn btn-delete" onclick="removeDemoStudioRow(${i})">✕ Убрать эту заглушку</button></div>
     </div>`).join('');
   document.querySelectorAll('#demoStudioRows [data-f]').forEach(el => {
@@ -742,6 +768,102 @@ function saveDemoStudios() {
   form.submit();
 }
 renderDemoStudios();
+
+/* ---------- Кроп фото для демо-студий (800×500, тот же кроп-тул, что у студий на сайте) ---------- */
+const CROP_W = 800, CROP_H = 500;
+let cropTargetIdx = -1;
+let cropNatW = 0, cropNatH = 0, cropBaseScale = 1, cropScale = 1, cropOffX = 0, cropOffY = 0, cropViewW = 0, cropViewH = 0;
+const cropViewport = document.getElementById('cropViewport');
+const cropImgEl = document.getElementById('cropImgEl');
+const cropZoom = document.getElementById('cropZoom');
+
+function openDemoPhotoCrop(idx) {
+  cropTargetIdx = idx;
+  const fi = document.getElementById('cropFileInput');
+  fi.value = '';
+  fi.click();
+}
+document.getElementById('cropFileInput').addEventListener('change', function(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = function() {
+    cropNatW = img.naturalWidth; cropNatH = img.naturalHeight;
+    document.getElementById('cropModalOverlay').style.display = 'flex';
+    const rect = cropViewport.getBoundingClientRect();
+    cropViewW = rect.width; cropViewH = rect.height;
+    cropBaseScale = Math.max(cropViewW / cropNatW, cropViewH / cropNatH);
+    cropScale = cropBaseScale;
+    cropOffX = (cropViewW - cropNatW * cropScale) / 2;
+    cropOffY = (cropViewH - cropNatH * cropScale) / 2;
+    cropZoom.value = 1;
+    cropImgEl.src = url;
+    cropApplyTransform();
+  };
+  img.src = url;
+});
+function cropClamp() {
+  const dispW = cropNatW * cropScale, dispH = cropNatH * cropScale;
+  cropOffX = Math.min(0, Math.max(cropViewW - dispW, cropOffX));
+  cropOffY = Math.min(0, Math.max(cropViewH - dispH, cropOffY));
+}
+function cropApplyTransform() {
+  cropImgEl.style.width = (cropNatW * cropScale) + 'px';
+  cropImgEl.style.height = (cropNatH * cropScale) + 'px';
+  cropImgEl.style.transform = 'translate(' + cropOffX + 'px,' + cropOffY + 'px)';
+}
+cropZoom.addEventListener('input', function() {
+  const cx = cropViewW / 2, cy = cropViewH / 2;
+  const imgCx = (cx - cropOffX) / cropScale, imgCy = (cy - cropOffY) / cropScale;
+  cropScale = cropBaseScale * parseFloat(cropZoom.value);
+  cropOffX = cx - imgCx * cropScale;
+  cropOffY = cy - imgCy * cropScale;
+  cropClamp();
+  cropApplyTransform();
+});
+let cropDragging = false, cropDragStartX = 0, cropDragStartY = 0, cropStartOffX = 0, cropStartOffY = 0;
+function cropDragStart(x, y) {
+  cropDragging = true; cropDragStartX = x; cropDragStartY = y;
+  cropStartOffX = cropOffX; cropStartOffY = cropOffY;
+}
+function cropDragMove(x, y) {
+  if (!cropDragging) return;
+  cropOffX = cropStartOffX + (x - cropDragStartX);
+  cropOffY = cropStartOffY + (y - cropDragStartY);
+  cropClamp();
+  cropApplyTransform();
+}
+function cropDragEnd() { cropDragging = false; }
+cropViewport.addEventListener('mousedown', e => cropDragStart(e.clientX, e.clientY));
+window.addEventListener('mousemove', e => cropDragMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', cropDragEnd);
+cropViewport.addEventListener('touchstart', e => { const t = e.touches[0]; cropDragStart(t.clientX, t.clientY); }, {passive: true});
+window.addEventListener('touchmove', e => { if (!cropDragging) return; const t = e.touches[0]; cropDragMove(t.clientX, t.clientY); }, {passive: true});
+window.addEventListener('touchend', cropDragEnd);
+
+function applyDemoPhotoCrop() {
+  const canvas = document.createElement('canvas');
+  canvas.width = CROP_W; canvas.height = CROP_H;
+  const ctx = canvas.getContext('2d');
+  const srcX = -cropOffX / cropScale, srcY = -cropOffY / cropScale;
+  const srcW = cropViewW / cropScale, srcH = cropViewH / cropScale;
+  ctx.drawImage(cropImgEl, srcX, srcY, srcW, srcH, 0, 0, CROP_W, CROP_H);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+  if (cropTargetIdx >= 0 && DEMO_STUDIO_STATE[cropTargetIdx]) {
+    DEMO_STUDIO_STATE[cropTargetIdx].photo = dataUrl;
+    renderDemoStudios();
+  }
+  closeCropModal();
+}
+function closeCropModal() {
+  document.getElementById('cropModalOverlay').style.display = 'none';
+  cropTargetIdx = -1;
+}
+function removeDemoPhoto(idx) {
+  DEMO_STUDIO_STATE[idx].photo = '';
+  renderDemoStudios();
+}
 
 /* ---------- Вакансии ---------- */
 function toggleVacAddCard() {

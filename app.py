@@ -450,7 +450,8 @@ def admin_demo_save():
                 "percent": request.form.get(f"demo_studio_percent_{i}", "").strip()[:60],
                 "desc": request.form.get(f"demo_studio_desc_{i}", "").strip()[:400],
                 "contact": request.form.get(f"demo_studio_contact_{i}", "").strip()[:200],
-                "photo": request.form.get(f"demo_studio_photo_{i}", "").strip()[:2000],
+                # ссылка ИЛИ JPEG data:URI после кропа 800×500 на клиенте (~40-190KB)
+                "photo": request.form.get(f"demo_studio_photo_{i}", "").strip()[:400000],
             })
     else:
         studios = current["studios"]
