@@ -202,16 +202,19 @@ def _tier_count(raw, tier, city=None, exclude_slot=None):
 
 def _resolve_tier(desired_tier, city, pricing):
     """По желаемому уровню и текущей занятости города возвращает
-    (итоговый_уровень, цена, откатили_ли_на_обычное)."""
+    (итоговый_уровень, ПОЛНАЯ_цена_к_оплате, буст_цена_за_месяц_или_None,
+    откатили_ли_на_обычное). Буст ДОПОЛНЯЕТ разовую подачу, а не заменяет
+    её — золото = submit_price + gold_price, не просто gold_price."""
     if desired_tier == "regular" or desired_tier not in BOOST_ORDER:
-        return "regular", pricing["submit_price"], False
+        return "regular", pricing["submit_price"], None, False
     listings_ref = _deps["listings_ref"]
     raw = db.reference(listings_ref).get() or {}
     cnt = _tier_count(raw, desired_tier, city)
     cap = pricing[f"{desired_tier}_count"]
     if cnt >= cap:
-        return "regular", pricing["submit_price"], True
-    return desired_tier, pricing[f"{desired_tier}_price"], False
+        return "regular", pricing["submit_price"], None, True
+    boost_price = pricing[f"{desired_tier}_price"]
+    return desired_tier, pricing["submit_price"] + boost_price, boost_price, False
 
 
 # ─────────────────────────── лист ожидания на занятые уровни ──────────────
@@ -291,10 +294,10 @@ def _submit_studio():
 
     desired_tier = (form.get("desired_tier") or "regular").strip()
     pricing = _deps["get_pricing"]()
-    tier, price, capped = _resolve_tier(desired_tier, fields["city"], pricing)
+    tier, price, boost_price, capped = _resolve_tier(desired_tier, fields["city"], pricing)
 
     sub_id, sub = _new_submission("studio", fields, auth, extra={
-        "status": "awaiting_payment", "tier": tier, "price": price,
+        "status": "awaiting_payment", "tier": tier, "price": price, "boost_price": boost_price,
     })
 
     amount = _reserve_amount(tg_id, price)
@@ -311,8 +314,11 @@ def _submit_studio():
             note += " Освободится место — напишем вам."
 
     perm = tier == "regular"
+    breakdown = ""
+    if boost_price:
+        breakdown = f" (размещение ${pricing['submit_price']} + буст ${boost_price}/мес)"
     _send(WA_BOT_TOKEN, tg_id,
-          f"💳 Тариф: {TIER_LABEL.get(tier, 'Обычное')}{note}\n\n"
+          f"💳 Тариф: {TIER_LABEL.get(tier, 'Обычное')}{breakdown}{note}\n\n"
           f"Переведите <b>{amount} USDT</b> в сети <b>TRC-20 (Tron)</b> на адрес:\n"
           f"<code>{USDT_WALLET}</code>\n\n"
           f"⚠️ Сумма с уникальными копейками — переведите ТОЧНО {amount}, не округляйте.\n"
@@ -386,8 +392,15 @@ def _notify_admin_review(sub_id, sub):
     f = sub["fields"]
     tier = sub.get("tier", "regular")
     price = sub.get("price")
+    boost_price = sub.get("boost_price")
     perm = tier == "regular"
-    text = (f"💰 Оплачено · {TIER_LABEL.get(tier, 'Обычное')} (${price}{'  разово' if perm else '/мес'})\n\n"
+    if perm:
+        price_note = f"${price} разово"
+    elif boost_price is not None:
+        price_note = f"${price} (разово {price - boost_price} + буст ${boost_price}/мес)"
+    else:
+        price_note = f"${price}/мес"
+    text = (f"💰 Оплачено · {TIER_LABEL.get(tier, 'Обычное')} ({price_note})\n\n"
             f"{_fmt_fields('studio', f)}\n\n👤 {_who(sub)}")
     buttons = [
         [{"text": "✅ Опубликовать", "callback_data": f"pub:{sub_id}"},
@@ -608,7 +621,7 @@ def publish_studio(sub_id):
     slot_key = _deps["slot_key"]
     slot_count = _deps["slot_count"]
     tier = sub.get("tier", "regular")
-    price = sub.get("price")
+    boost_price = sub.get("boost_price")  # цена буста за месяц (без разовой подачи), None для regular
 
     raw = db.reference(listings_ref).get() or {}
     free_n = None
@@ -630,7 +643,7 @@ def publish_studio(sub_id):
         "social_telegram": f.get("social_telegram", ""), "social_instagram": f.get("social_instagram", ""),
         "social_vk": f.get("social_vk", ""),
         "status": "active", "boost_tier": tier, "boost_expires_at": expires_at,
-        "boost_price": None if tier == "regular" else price,
+        "boost_price": boost_price,
         "clicks": 0, "owner_tg_id": sub["tg_user_id"],
         "promo_type": f.get("promo_type") or "studio",
     })
