@@ -755,6 +755,12 @@ def _handle_user_callback(cb):
         _answer_cb(WA_BOT_TOKEN, cb_id, "Ждём оплату")
         return
 
+    if data == "support":
+        username = (cb.get("from") or {}).get("username")
+        _notify_payment_help(chat_id, username)
+        _answer_cb(WA_BOT_TOKEN, cb_id, "Сообщение отправлено администратору")
+        return
+
     _answer_cb(WA_BOT_TOKEN, cb_id, "")
 
 
@@ -776,7 +782,8 @@ def _process_txid(chat_id, txid):
     if paid is None:
         _send(WA_BOT_TOKEN, chat_id,
               "❌ Платёж не найден или сумма меньше нужной. Проверьте перевод и пришлите TxID ещё раз "
-              "(обычно платёж подтверждается в сети за 1-3 минуты).")
+              "(обычно платёж подтверждается в сети за 1-3 минуты).",
+              buttons=[[{"text": "💬 Связаться с поддержкой", "callback_data": "support"}]])
         return False, "not_found"
 
     if pending.get("kind") == "submit":
@@ -817,6 +824,21 @@ def _confirm_payment():
     return jsonify({"ok": ok, "error": err})
 
 
+def _notify_payment_help(chat_id, username=None, note=None):
+    """Общая логика «нужна помощь с оплатой» — и веб-кнопка «Написать нам»
+    (report-payment-issue), и inline-кнопка «💬 Связаться с поддержкой» под
+    сообщением «платёж не найден» прямо в этом же Telegram-боте."""
+    pending = db.reference(f"{_PENDING_PAY_REF}/{chat_id}").get()
+    who = f"id {chat_id}" + (f" (@{username})" if username else "")
+    text = f"⚠️ <b>Нужна помощь с оплатой</b>\n\nОт: {who}\n"
+    if pending:
+        text += f"Ожидаемая сумма: {pending.get('amount')} USDT · тип: {pending.get('kind')}\n"
+    if note:
+        text += f"\nСообщение от пользователя:\n{note}"
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text)
+    _send(WA_BOT_TOKEN, chat_id, "✅ Мы получили ваш запрос — администратор проверит оплату вручную и ответит здесь, в Telegram.")
+
+
 def _report_payment_issue():
     """POST /api/report-payment-issue — если автопоиск не находит платёж,
     кнопка «Написать нам» на сайте шлёт админу контекст (кто, сколько,
@@ -828,17 +850,7 @@ def _report_payment_issue():
     note = (data.get("message") or "").strip()[:500]
     if not tg_id:
         return jsonify({"ok": False, "error": "fields"}), 400
-
-    pending = db.reference(f"{_PENDING_PAY_REF}/{tg_id}").get()
-    username = auth.get("username")
-    who = f"id {tg_id}" + (f" (@{username})" if username else "")
-    text = f"⚠️ <b>Платёж не находится автоматически</b>\n\nОт: {who}\n"
-    if pending:
-        text += f"Ожидаемая сумма: {pending.get('amount')} USDT · тип: {pending.get('kind')}\n"
-    if note:
-        text += f"\nСообщение от пользователя:\n{note}"
-    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text)
-    _send(WA_BOT_TOKEN, tg_id, "✅ Сообщение отправлено администратору — проверим оплату вручную и ответим здесь, в Telegram.")
+    _notify_payment_help(tg_id, auth.get("username"), note)
     return jsonify({"ok": True})
 
 
