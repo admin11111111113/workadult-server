@@ -73,7 +73,8 @@ SUPPORT_THREAD_TTL = 48 * 3600
 _TXID_RE = re.compile(r"^[0-9a-fA-F]{64}$")         # хэш транзакции Tron — ровно 64 hex-символа
 _WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
 _VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> когда публиковал вакансию последний раз
-VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю на студию
+VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю — обычным/бронза/серебро
+VACANCY_POST_COOLDOWN_VIP = 3.5 * 24 * 3600         # 2 вакансии в неделю — золото и «на главной» (буст активен)
 _REVIEWS_REF = "/workadult_reviews"                 # отзывы о студиях, 1-5 звёзд, на модерации/опубликованные
 
 BOOST_ORDER = ("bronze", "silver", "gold", "home")   # порядок кнопок, дешёвый → дорогой
@@ -207,6 +208,21 @@ def _tier_count(raw, tier, city=None, exclude_slot=None):
         elif rec.get("city") == city and _eff_tier(rec) == tier:
             c += 1
     return c
+
+
+def _tg_tier(tg_id):
+    """Текущий эффективный тир студии этого владельца (по Telegram ID) —
+    для тарифного кулдауна публикации вакансий (золото/на главной быстрее)."""
+    if not tg_id:
+        return "regular"
+    listings_ref = _deps["listings_ref"]
+    raw = db.reference(listings_ref).get() or {}
+    for rec in raw.values():
+        if isinstance(rec, dict) and rec.get("owner_tg_id") == tg_id and rec.get("status") == "active":
+            tier = _eff_tier(rec)
+            if tier != "regular":
+                return tier
+    return "regular"
 
 
 def _resolve_tier(desired_tier, city, pricing):
@@ -351,11 +367,14 @@ def _submit_vacancy():
         return jsonify({"ok": False, "error": "fields"}), 400
 
     tg_id = auth.get("id")
+    vip = _tg_tier(tg_id) in ("gold", "home")
+    cooldown = VACANCY_POST_COOLDOWN_VIP if vip else VACANCY_POST_COOLDOWN
     last = db.reference(f"{_VACANCY_LAST_POST_REF}/{tg_id}").get() if tg_id else None
-    if last and time.time() - last < VACANCY_POST_COOLDOWN:
-        wait_days = int((VACANCY_POST_COOLDOWN - (time.time() - last)) / 86400) + 1
+    if last and time.time() - last < cooldown:
+        wait_days = int((cooldown - (time.time() - last)) / 86400) + 1
+        limit_text = "не чаще 2 раз в неделю" if vip else "не чаще раза в неделю"
         return jsonify({"ok": False, "error": "cooldown",
-                        "message": f"Можно публиковать не чаще раза в неделю. Попробуйте через {wait_days} дн."}), 429
+                        "message": f"Можно публиковать {limit_text}. Попробуйте через {wait_days} дн."}), 429
 
     sub_id, sub = _new_submission("vacancy", fields, auth)
     if sub_id is None:
