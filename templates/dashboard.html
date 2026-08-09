@@ -198,7 +198,7 @@
           <span>{{ (s.created_at or '').replace('T', ' ')[:16] }}</span>
         </div>
         <div class="cat-name">{{ f.name }}</div>
-        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
+        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent|fmt_percent }}{% endif %}</div>
         <div class="cat-contacts">{{ f.contact }}{% if f.phone %} · {{ f.phone }}{% endif %}</div>
         <div style="font-size:11px;color:#666;margin-top:6px">Telegram id: {{ s.tg_user_id }}{% if s.tg_username %} (@{{ s.tg_username }}){% endif %}</div>
         <div class="cat-actions">
@@ -252,7 +252,7 @@
           <span>{{ (s.created_at or '').replace('T', ' ')[:16] }}</span>
         </div>
         <div class="cat-name">{{ f.name }}</div>
-        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
+        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent|fmt_percent }}{% endif %}</div>
         <div class="cat-desc">{{ f.desc }}</div>
         <div class="cat-contacts">{{ f.contact }}{% if f.phone %} · {{ f.phone }}{% endif %}</div>
         {% if f.url %}<div class="cat-url"><a href="{{ f.url }}" target="_blank">{{ f.url }}</a></div>{% endif %}
@@ -678,7 +678,7 @@
         <div class="vboard-card" style="opacity:.7">
           <div class="org">{{ s.city }}</div>
           <div class="title">{{ s.name }}</div>
-          {% if s.percent %}<div class="sal">{{ s.percent }}</div>{% endif %}
+          {% if s.percent %}<div class="sal">{{ s.percent|fmt_percent }}</div>{% endif %}
           <div class="ct">заглушка</div>
         </div>
         {% endfor %}
@@ -746,6 +746,11 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = (s == null ? '' : String(s));
   return d.innerHTML;
+}
+function fmtPercent(v) {
+  v = (v == null ? '' : String(v)).trim();
+  if (!v || v.indexOf('%') !== -1) return v;
+  return /^\d+([.,]\d+)?(\s*-\s*\d+([.,]\d+)?)?$/.test(v) ? v + '%' : v;
 }
 
 let DEMO_VAC_STATE = {{ demo.vacancies | tojson }};
@@ -815,7 +820,7 @@ function demoStudioCardHtml(s) {
     '<div class="cat-badge"><span class="badge-tier regular">заглушка</span></div>' +
     (cover ? `<img class="cat-photo" src="${escHtml(cover)}" alt="" onerror="this.style.display='none'">` : '') +
     '<div class="cat-name">' + escHtml(s.name || '') + '</div>' +
-    '<div class="cat-city">📍 ' + escHtml(s.city || '') + (s.percent ? ' · 💰 ' + escHtml(s.percent) : '') + '</div>' +
+    '<div class="cat-city">📍 ' + escHtml(s.city || '') + (s.percent ? ' · 💰 ' + escHtml(fmtPercent(s.percent)) : '') + '</div>' +
     (s.desc ? '<div class="cat-desc">' + escHtml(s.desc) + '</div>' : '') +
     '</div>';
 }
@@ -830,7 +835,7 @@ function renderDemoStudios() {
     <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
       <div class="form-group"><label>Название студии</label><input data-idx="${i}" data-f="name" value="${escHtml(s.name)}"></div>
       <div class="form-group"><label>Город</label><input data-idx="${i}" data-f="city" value="${escHtml(s.city)}"></div>
-      <div class="form-group"><label>Процент</label><input data-idx="${i}" data-f="percent" value="${escHtml(s.percent)}"></div>
+      <div class="form-group"><label>Выплата моделям</label><input data-idx="${i}" data-f="percent" value="${escHtml(s.percent)}"></div>
       <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(s.contact)}"></div>
       <div class="form-group full"><label>Описание</label><textarea data-idx="${i}" data-f="desc">${escHtml(s.desc)}</textarea></div>
       <div class="form-group full">
@@ -1032,7 +1037,7 @@ function studioFormFields(s) {
         <input name="city" value="${s.city || ''}" placeholder="Город">
       </div>
       <div class="form-group">
-        <label>Процент для моделей</label>
+        <label>Выплата моделям</label>
         <input name="percent" value="${s.percent || ''}" placeholder="Например: 50-70%">
       </div>
       <div class="form-group">
@@ -1179,7 +1184,7 @@ function studioCardHtml(s) {
       </div>
       ${cover ? `<img class="cat-photo" src="${cover}" alt="" onerror="this.style.display='none'">` : ''}
       <div class="cat-name">${s.name}</div>
-      <div class="cat-city">📍 ${s.city || ''}${s.percent ? ' · 💰 ' + s.percent : ''}</div>
+      <div class="cat-city">📍 ${s.city || ''}${s.percent ? ' · 💰 ' + fmtPercent(s.percent) : ''}</div>
       ${s.desc ? `<div class="cat-desc">${s.desc}</div>` : ''}
       ${s.contacts ? `<div class="cat-contacts">📞 ${s.contacts}</div>` : ''}
       ${daysHtml}

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -35,6 +36,15 @@ else:
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+_PERCENT_RE = re.compile(r"^\d+([.,]\d+)?(\s*-\s*\d+([.,]\d+)?)?$")
+
+@app.template_filter("fmt_percent")
+def fmt_percent(v):
+    v = (v or "").strip()
+    if not v or "%" in v:
+        return v
+    return v + "%" if _PERCENT_RE.match(v) else v
 
 _LISTINGS_REF = "/workadult_studios"
 _VACANCIES_REF = "/workadult_vacancies"
