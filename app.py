@@ -394,7 +394,7 @@ def admin_dashboard():
     # удаления, + бесплатные вакансии/резюме, ждущие одобрения. То же самое,
     # что приходит в Telegram — тут просто дублируется веб-интерфейсом.
     raw_sub = db.reference(moderation._SUBMISSIONS_REF).get() or {}
-    review_studios, review_free = [], []
+    review_studios, review_free, pending_payment = [], [], []
     for key, rec in raw_sub.items():
         if not isinstance(rec, dict):
             continue
@@ -403,8 +403,14 @@ def admin_dashboard():
             review_studios.append(item)
         elif rec.get("type") in ("vacancy", "resume") and rec.get("status") == "pending":
             review_free.append(item)
+        elif rec.get("type") == "studio" and rec.get("status") == "awaiting_payment":
+            # Заполненная анкета студии, ждёт оплаты — ещё не оплачена, но
+            # видна тут, чтобы по запросу «связаться с поддержкой» из бота
+            # можно было узнать, чья это заявка (имя/город/контакт).
+            pending_payment.append(item)
     review_studios.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     review_free.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    pending_payment.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
@@ -415,6 +421,7 @@ def admin_dashboard():
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
                            studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS,
                            review_studios=review_studios, review_free=review_free,
+                           pending_payment=pending_payment,
                            moderation_tier_label=moderation.TIER_LABEL)
 
 @app.route("/admin/pricing/save", methods=["POST"])

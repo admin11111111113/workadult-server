@@ -431,6 +431,8 @@ def _webhook():
                 _handle_review_callback(cb)
             elif data.startswith("boostpick:") or data == "support":
                 _handle_user_callback(cb)
+            elif data.startswith("replypay:"):
+                _handle_replypay_callback(cb)
             return jsonify({"ok": True})
         msg = update.get("message")
         if msg:
@@ -448,6 +450,12 @@ def _handle_message(msg):
     # Админ пишет текст правки — приоритетно, только в его личном чате.
     if chat_id == _admin_chat_id():
         state = db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").get()
+        if state and state.get("replying_to"):
+            target = state["replying_to"]
+            db.reference(f"{_ADMIN_STATE_REF}/{chat_id}").delete()
+            _send(WA_BOT_TOKEN, target, f"💬 <b>Ответ от поддержки:</b>\n\n{text}")
+            _send(WA_BOT_TOKEN, chat_id, "✅ Отправлено пользователю.")
+            return
         if state and state.get("editing"):
             _handle_admin_edit_text(chat_id, text, state)
             return
@@ -495,6 +503,26 @@ def _handle_admin_callback(cb):
         _send(WA_BOT_TOKEN, chat_id,
               "✏️ Пришлите новый текст объявления одним сообщением — он заменит текущий, и заявка сразу одобрится.")
         _answer_cb(WA_BOT_TOKEN, cb_id, "Жду текст")
+
+
+def _handle_replypay_callback(cb):
+    """«✍️ Ответить пользователю» под уведомлением о проблеме с оплатой —
+    следующее текстовое сообщение админа в его личном чате пересылается
+    тому пользователю от лица бота (см. _handle_message/replying_to)."""
+    data = cb.get("data", "")
+    cb_id = cb.get("id")
+    admin_chat_id = cb["message"]["chat"]["id"]
+    if admin_chat_id != _admin_chat_id():
+        _answer_cb(WA_BOT_TOKEN, cb_id, "недоступно")
+        return
+    try:
+        target_chat_id = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        _answer_cb(WA_BOT_TOKEN, cb_id, "ошибка")
+        return
+    db.reference(f"{_ADMIN_STATE_REF}/{admin_chat_id}").set({"replying_to": target_chat_id})
+    _send(WA_BOT_TOKEN, admin_chat_id, "✍️ Напишите ответ пользователю следующим сообщением.")
+    _answer_cb(WA_BOT_TOKEN, cb_id, "Жду ответ")
 
 
 def _handle_admin_edit_text(chat_id, text, state):
@@ -833,9 +861,21 @@ def _notify_payment_help(chat_id, username=None, note=None):
     text = f"⚠️ <b>Нужна помощь с оплатой</b>\n\nОт: {who}\n"
     if pending:
         text += f"Ожидаемая сумма: {pending.get('amount')} USDT · тип: {pending.get('kind')}\n"
+        if pending.get("kind") == "submit" and pending.get("sub_id"):
+            sub = db.reference(f"{_SUBMISSIONS_REF}/{pending['sub_id']}").get()
+            if sub:
+                f = sub.get("fields") or {}
+                text += f"Заявка: <b>{f.get('name', '')}</b>, {f.get('city', '')}, контакт {f.get('contact', '')}\n"
+        elif pending.get("kind") == "boost" and pending.get("slot_n"):
+            listings_ref = _deps["listings_ref"]
+            slot_key = _deps["slot_key"]
+            rec = db.reference(f"{listings_ref}/{slot_key(pending['slot_n'])}").get()
+            if rec:
+                text += f"Место: <b>{rec.get('name', '')}</b>, {rec.get('city', '')}\n"
     if note:
         text += f"\nСообщение от пользователя:\n{note}"
-    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text)
+    _send(WA_BOT_TOKEN, WA_ADMIN_CHAT_ID, text,
+          buttons=[[{"text": "✍️ Ответить пользователю", "callback_data": f"replypay:{chat_id}"}]])
     _send(WA_BOT_TOKEN, chat_id, "✅ Мы получили ваш запрос — администратор проверит оплату вручную и ответит здесь, в Telegram.")
 
 

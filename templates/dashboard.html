@@ -178,11 +178,31 @@
   <div class="tab-panel" id="tab-overview">
 
   <div class="section-block">
-    <h2>🆕 Рассмотрение новых{% if review_studios or review_free %} <span class="badge active">{{ (review_studios|length) + (review_free|length) }}</span>{% endif %}</h2>
-    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Оплаченные студии (после оплаты — опубликовать/поправить/удалить) и бесплатные вакансии/резюме, ждущие одобрения. То же самое приходит в Telegram — можно обработать отсюда или оттуда, состояние общее.</div>
+    <h2>🆕 Рассмотрение новых{% if review_studios or review_free or pending_payment %} <span class="badge active">{{ (review_studios|length) + (review_free|length) + (pending_payment|length) }}</span>{% endif %}</h2>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Оплаченные студии (после оплаты — опубликовать/поправить/удалить), бесплатные вакансии/резюме и ещё не оплаченные заявки. То же самое приходит в Telegram — можно обработать отсюда или оттуда, состояние общее.</div>
 
-    {% if not review_studios and not review_free %}
+    {% if not review_studios and not review_free and not pending_payment %}
     <div class="cat-empty">Нет новых заявок на рассмотрении</div>
+    {% endif %}
+
+    {% if pending_payment %}
+    <div style="font-size:13px;color:#9aa0aa;margin:8px 0 12px;font-weight:700">⏳ Заполнено, ждёт оплаты (ещё не платно)</div>
+    <div style="font-size:12px;color:#666;margin-bottom:10px">Если по «Связаться с поддержкой» пришёл запрос от Telegram-id/юзернейма — ищите здесь заявку с тем же контактом, чтобы понять, кто это.</div>
+    <div class="cat-grid">
+      {% for s in pending_payment %}
+      {% set f = s.fields or {} %}
+      <div class="cat-card">
+        <div class="cat-badge">
+          <span>{{ moderation_tier_label.get(s.tier, s.tier) }} · ${{ s.price }} к оплате</span>
+          <span>{{ s.created_at or '' }}</span>
+        </div>
+        <div class="cat-name">{{ f.name }}</div>
+        <div class="cat-city">📍 {{ f.city }}{% if f.percent %} · 💰 {{ f.percent }}{% endif %}</div>
+        <div class="cat-contacts">{{ f.contact }}{% if f.phone %} · {{ f.phone }}{% endif %}</div>
+        <div style="font-size:11px;color:#666;margin-top:6px">Telegram id: {{ s.tg_user_id }}{% if s.tg_username %} (@{{ s.tg_username }}){% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
 
     {% if review_studios %}
