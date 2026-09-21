@@ -965,27 +965,6 @@ def _tmp_fix_pricing():
     db.reference(_PRICING_REF).set(dict(PRICING_DEFAULTS))
     return jsonify({"ok": True, "pricing": PRICING_DEFAULTS})
 
-@app.route("/tg/fix-test-contacts", methods=["POST"])
-def _tmp_fix_test_contacts():
-    """ВРЕМЕННО: у уже созданных тестовых карточек (is_test_seed=True) контакт
-    остался старым (@test_N / @test_vac_N) — код генерации это чинили, но
-    существующие записи в Firebase не трогали. Проставляет реальный бот.
-    Убрать после использования."""
-    if request.args.get("key") != os.environ.get("WA_WEBHOOK_SECRET", "").strip():
-        return jsonify({"ok": False, "error": "forbidden"}), 403
-    fixed = {"studios": [], "vacancies": []}
-    raw = db.reference(_LISTINGS_REF).get() or {}
-    for slot_key, rec in raw.items():
-        if isinstance(rec, dict) and rec.get("is_test_seed") and rec.get("contacts", "").startswith("@test_"):
-            db.reference(f"{_LISTINGS_REF}/{slot_key}/contacts").set("@Workadultotvet_bot")
-            fixed["studios"].append(rec.get("name"))
-    raw = db.reference(_VACANCIES_REF).get() or {}
-    for key, rec in raw.items():
-        if isinstance(rec, dict) and rec.get("is_test_seed") and rec.get("contact", "").startswith("@test_"):
-            db.reference(f"{_VACANCIES_REF}/{key}/contact").set("@Workadultotvet_bot")
-            fixed["vacancies"].append(rec.get("org"))
-    return jsonify({"ok": True, "fixed": fixed})
-
 moderation.init_app(app, get_pricing=_get_pricing, listings_ref=_LISTINGS_REF,
                      vacancies_ref=_VACANCIES_REF, slot_key=_slot_key, slot_count=SLOT_COUNT)
 
