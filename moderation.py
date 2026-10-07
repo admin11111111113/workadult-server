@@ -51,13 +51,12 @@ WA_BOT_TOKEN = os.environ.get("WA_BOT_TOKEN", "").strip()
 # ─────────────── проверка входа через Telegram Login Widget ───────────────
 # Виджет на сайте — бот из LOGIN_BOT_TOKEN (@Workadultotvet_bot). Подпись
 # сверяется по https://core.telegram.org/widgets/login#checking-authorization.
-# Пока LOGIN_BOT_TOKEN не задан — проверка выключена (поведение как раньше).
+# Подпись принимается от бота виджета (WA_BOT_TOKEN, @Workadult_feedback_bot)
+# или от LOGIN_BOT_TOKEN, если задан отдельный бот для входа.
 LOGIN_BOT_TOKEN = os.environ.get("LOGIN_BOT_TOKEN", "").strip()
 _AUTH_MAX_AGE = 2 * 86400
 
 def _auth_ok(auth):
-    if not LOGIN_BOT_TOKEN:
-        return True
     if not isinstance(auth, dict) or not auth.get("hash") or not auth.get("id"):
         return False
     try:
@@ -102,8 +101,8 @@ SUPPORT_THREAD_TTL = 48 * 3600
 _TXID_RE = re.compile(r"^[0-9a-fA-F]{64}$")         # хэш транзакции Tron — ровно 64 hex-символа
 _WAITLIST_REF = "/workadult_waitlist"              # город/тариф -> кто ждёт освобождения места
 _VACANCY_LAST_POST_REF = "/workadult_vacancy_last_post"  # tg_user_id -> когда публиковал вакансию последний раз
-VACANCY_POST_COOLDOWN = 7 * 24 * 3600               # 1 вакансия в неделю — обычным/бронза/серебро
-VACANCY_POST_COOLDOWN_VIP = 3.5 * 24 * 3600         # 2 вакансии в неделю — золото и «на главной» (буст активен)
+VACANCY_POST_COOLDOWN = 24 * 3600                   # бесплатно, 1 вакансия в сутки — всем
+VACANCY_POST_COOLDOWN_VIP = 24 * 3600               # то же для золота/«на главной»
 _REVIEWS_REF = "/workadult_reviews"                 # отзывы о студиях, 1-5 звёзд, на модерации/опубликованные
 _VALID_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")  # держать в синхроне с CATALOG_FORMATS в app.py
 
@@ -402,7 +401,8 @@ def _vacancy_cooldown_status(tg_id):
         "can_post": can_post,
         "wait_days": (int(remaining / 86400) + 1) if remaining > 0 else 0,
         "vip": vip,
-        "posts_per_week": 2 if vip else 1,
+        "posts_per_day": 1,
+        "wait_hours": (int(remaining / 3600) + 1) if remaining > 0 else 0,
         "next_allowed_at": (last + cooldown) if (last and not can_post) else None,
     }
 
@@ -436,9 +436,8 @@ def _submit_vacancy():
     tg_id = auth.get("id")
     status = _vacancy_cooldown_status(tg_id)
     if not status["can_post"]:
-        limit_text = "не чаще 2 раз в неделю" if status["vip"] else "не чаще раза в неделю"
         return jsonify({"ok": False, "error": "cooldown",
-                        "message": f"Можно публиковать {limit_text}. Попробуйте через {status['wait_days']} дн."}), 429
+                        "message": f"Бесплатно — одна вакансия в сутки. Следующую можно через {status['wait_hours']} ч."}), 429
 
     sub_id, sub = _new_submission("vacancy", fields, auth)
     if sub_id is None:
