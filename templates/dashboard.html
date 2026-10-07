@@ -429,27 +429,9 @@
       <span style="font-size:13px;color:#9aa0aa">Лента по дате (без закрепа) — новая вакансия всегда выше старой. Если у студии оплачен цветной тариф, её вакансия подсвечивается тем же цветом (не влияет на порядок). Публикация студиями — раз в неделю, у золота и «на главной» — 2 раза в неделю.</span>
       <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
     </div>
-    <div class="actions-row" style="margin-bottom:20px">
-      <form method="post" action="/admin/seed-test-vacancies" style="display:inline">
-        <button class="btn btn-move" type="submit">🧪 Создать тестовые вакансии</button>
-      </form>
-      <form method="post" action="/admin/cleanup-test-vacancies" style="display:inline" onsubmit="return confirm('Удалить все тестовые вакансии?')">
-        <button class="btn btn-delete" type="submit">🗑 Удалить тестовые вакансии</button>
-      </form>
-    </div>
 
-    <div style="margin-bottom:28px">
-      <div style="font-size:13px;color:#9aa0aa;font-weight:700;margin-bottom:6px">🎭 Демо-заглушки — показываются на сайте вместо доски, пока настоящих вакансий нет</div>
-      <div style="font-size:12.5px;color:#666;margin-bottom:12px">Появится хотя бы одна настоящая вакансия — заглушки исчезнут сами. Можно добавлять/убирать сколько угодно, вплоть до нуля.</div>
-      <div class="vboard-row" id="demoVacPreview"></div>
-      <div id="demoVacRows" style="margin-top:16px"></div>
-      <div class="actions-row" style="margin-top:6px">
-        <button type="button" class="btn btn-move" onclick="addDemoVacRow()">+ Добавить заглушку</button>
-        <button type="button" class="btn btn-save" onclick="saveDemoVac()">💾 Сохранить заглушки</button>
-      </div>
-    </div>
 
-    <div class="vboard-preview-label">Так последние вакансии выглядят на главной сайта — клик по карточке открывает редактирование</div>
+    <div class="vboard-preview-label">Последние вакансии (на сайте — страница «Вакансии», новые сверху) — клик по карточке открывает редактирование</div>
     {% if vac_top5 %}
     <div class="vboard-row">
       {% for v in vac_top5 %}
@@ -774,65 +756,6 @@ function fmtPercent(v) {
   return /^\d+([.,]\d+)?(\s*-\s*\d+([.,]\d+)?)?$/.test(v) ? v + '%' : v;
 }
 
-let DEMO_VAC_STATE = {{ demo.vacancies | tojson }};
-function demoVacCardHtml(v) {
-  return '<div class="vboard-card">' +
-    (v.org ? '<div class="org">' + escHtml(v.org) + '</div>' : '') +
-    '<div class="title">' + escHtml(v.title || '') + '</div>' +
-    (v.salary ? '<div class="sal">' + escHtml(v.salary) + '</div>' : '') +
-    '<div class="ct">заглушка</div></div>';
-}
-function renderDemoVac() {
-  document.getElementById('demoVacPreview').innerHTML = DEMO_VAC_STATE.length
-    ? DEMO_VAC_STATE.map(demoVacCardHtml).join('')
-    : '<div class="cat-empty">Заглушек нет — при пустой доске сайт покажет «вакансий пока нет»</div>';
-  document.getElementById('demoVacRows').innerHTML = DEMO_VAC_STATE.map((v, i) => `
-    <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
-      <div class="form-group"><label>Студия/компания</label><input data-idx="${i}" data-f="org" value="${escHtml(v.org)}"></div>
-      <div class="form-group"><label>Вакансия</label><input data-idx="${i}" data-f="title" value="${escHtml(v.title)}"></div>
-      <div class="form-group"><label>Зарплата/условия</label><input data-idx="${i}" data-f="salary" value="${escHtml(v.salary)}"></div>
-      <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(v.contact)}"></div>
-      <div class="form-group full"><label>Описание</label><textarea data-idx="${i}" data-f="desc">${escHtml(v.desc)}</textarea></div>
-      <div class="form-group full"><button type="button" class="btn btn-delete" onclick="removeDemoVacRow(${i})">✕ Убрать эту заглушку</button></div>
-    </div>`).join('');
-  document.querySelectorAll('#demoVacRows [data-f]').forEach(el => {
-    el.addEventListener('input', () => {
-      DEMO_VAC_STATE[+el.dataset.idx][el.dataset.f] = el.value;
-      renderDemoVac_previewOnly();
-    });
-  });
-}
-function renderDemoVac_previewOnly() {
-  document.getElementById('demoVacPreview').innerHTML = DEMO_VAC_STATE.length
-    ? DEMO_VAC_STATE.map(demoVacCardHtml).join('')
-    : '<div class="cat-empty">Заглушек нет — при пустой доске сайт покажет «вакансий пока нет»</div>';
-}
-function addDemoVacRow() {
-  DEMO_VAC_STATE.push({org: '', title: '', salary: '', desc: '', contact: ''});
-  renderDemoVac();
-}
-function removeDemoVacRow(i) {
-  DEMO_VAC_STATE.splice(i, 1);
-  renderDemoVac();
-}
-function saveDemoVac() {
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = '/admin/demo/save';
-  const countInp = document.createElement('input');
-  countInp.type = 'hidden'; countInp.name = 'demo_vac_count'; countInp.value = DEMO_VAC_STATE.length;
-  form.appendChild(countInp);
-  DEMO_VAC_STATE.forEach((v, i) => {
-    ['org', 'title', 'salary', 'desc', 'contact'].forEach(f => {
-      const inp = document.createElement('input');
-      inp.type = 'hidden'; inp.name = `demo_vac_${f}_${i}`; inp.value = v[f] || '';
-      form.appendChild(inp);
-    });
-  });
-  document.body.appendChild(form);
-  form.submit();
-}
-renderDemoVac();
 
 let DEMO_STUDIO_STATE = {{ demo.studios | tojson }};
 function demoStudioCardHtml(s) {

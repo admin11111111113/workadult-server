@@ -95,11 +95,10 @@ def _get_demo():
     свободно. Пока никто ничего не сохранял (узла ещё нет) — 3 дефолтных."""
     raw = db.reference(_DEMO_REF).get()
     if not raw:
-        return {"studios": [dict(s) for s in DEMO_DEFAULTS["studios"]],
-                "vacancies": [dict(v) for v in DEMO_DEFAULTS["vacancies"]]}
+        return {"studios": [dict(s) for s in DEMO_DEFAULTS["studios"]], "vacancies": []}
     studios = [s for s in _as_list(raw.get("studios")) if isinstance(s, dict)]
-    vacancies = [v for v in _as_list(raw.get("vacancies")) if isinstance(v, dict)]
-    return {"studios": studios, "vacancies": vacancies}
+    # Демо-вакансии отключены: при пустой ленте сайт пишет «вакансий пока нет».
+    return {"studios": studios, "vacancies": []}
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")
@@ -329,7 +328,7 @@ def api_board():
     raw = db.reference(_VACANCIES_REF).get() or {}
     vacancies = []
     for key, rec in raw.items():
-        if not isinstance(rec, dict):
+        if not isinstance(rec, dict) or rec.get("is_test_seed"):
             continue
         item = {f: rec.get(f, "") for f in VACANCY_FIELDS}
         item["date"] = rec.get("date", "")
@@ -749,57 +748,6 @@ def admin_cleanup_test_studios():
         if rec and rec.get("is_test_seed"):
             db.reference(f"{_LISTINGS_REF}/{_slot_key(n)}").delete()
     return redirect(url_for("admin_dashboard"))
-
-@app.route("/admin/seed-test-vacancies", methods=["POST"])
-@_require_admin
-def admin_seed_test_vacancies():
-    """Тестовые вакансии — по одной от студии каждого тира (если тестовые
-    студии уже созданы), чтобы увидеть подсветку карточки её цветом."""
-    raw = db.reference(_LISTINGS_REF).get() or {}
-    by_tier = {}
-    for rec in raw.values():
-        if isinstance(rec, dict) and rec.get("is_test_seed"):
-            by_tier.setdefault(rec.get("boost_tier", "regular"), rec)
-
-    templates = [
-        ("gold", "Вебкам-модель", "55–75%, обучение, наставник"),
-        ("gold", "Оператор чата", "оклад + % с продаж"),
-        ("silver", "Вебкам-модель", "50–65%, гибкий график"),
-        ("bronze", "Администратор студии", "оклад + бонусы"),
-        ("regular", "Вебкам-модель (удалённо)", "до 60% из дома"),
-        ("regular", "Вебкам-модель", "40–55%, без опыта"),
-    ]
-    ref_root = db.reference(_VACANCIES_REF)
-    now = time.time()
-    for i, (tier, title, salary) in enumerate(templates):
-        studio = by_tier.get(tier)
-        ref_root.push({
-            "org": studio["name"] if studio else "Тестовая студия",
-            "title": title, "salary": salary,
-            "desc": "Тестовая вакансия для проверки вёрстки — будет удалена.",
-            "contact": "@Workadultotvet_bot",
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "ts": now - i,
-            "tg_user_id": studio.get("owner_tg_id") if studio else None,
-            "is_test_seed": True,
-        })
-    return redirect(url_for("admin_dashboard"))
-
-@app.route("/admin/cleanup-test-vacancies", methods=["POST"])
-@_require_admin
-def admin_cleanup_test_vacancies():
-    raw = db.reference(_VACANCIES_REF).get() or {}
-    for key, rec in list(raw.items()):
-        if isinstance(rec, dict) and rec.get("is_test_seed"):
-            db.reference(_VACANCIES_REF).child(key).delete()
-    return redirect(url_for("admin_dashboard"))
-
-
-# ─────────────────────────── Рассмотрение новых ──────────────
-# Та же очередь, что приходит в Telegram (оплаченные студии + бесплатные
-# вакансии/резюме) — здесь дублируется веб-формой, действия идут через те же
-# публичные функции moderation.py, так что состояние всегда согласовано вне
-# зависимости от того, откуда админ нажал: из ТГ или из админки.
 
 @app.route("/admin/review/<sub_id>/publish", methods=["POST"])
 @_require_admin
