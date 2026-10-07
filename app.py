@@ -327,10 +327,21 @@ def api_board():
     от этого не меняется — только цвет."""
     raw = db.reference(_VACANCIES_REF).get() or {}
     vacancies = []
+    names = None   # tg_user_id -> username из заявок (для старых вакансий без ника)
     for key, rec in raw.items():
         if not isinstance(rec, dict) or rec.get("is_test_seed"):
             continue
         item = {f: rec.get(f, "") for f in VACANCY_FIELDS}
+        if not moderation.usable_contact(item["contact"]):
+            uname = rec.get("tg_username")
+            if not uname and rec.get("tg_user_id"):
+                if names is None:
+                    names = {}
+                    for sub in (db.reference(moderation._SUBMISSIONS_REF).get() or {}).values():
+                        if isinstance(sub, dict) and sub.get("tg_user_id") and sub.get("tg_username"):
+                            names[sub["tg_user_id"]] = sub["tg_username"]
+                uname = names.get(rec.get("tg_user_id"))
+            item["contact"] = moderation.fix_contact(item["contact"], uname)
         item["date"] = rec.get("date", "")
         item["ts"] = rec.get("ts") or 0
         item["tier"] = _studio_tier_for_tg(rec.get("tg_user_id"))

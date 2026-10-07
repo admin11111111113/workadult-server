@@ -297,6 +297,24 @@ def notify_waitlist(city, tier):
     ref.delete()
 
 
+def usable_contact(c):
+    """Контакт, по которому реально можно написать: @ник, ссылка, e-mail или
+    телефон. Просто «Telegram» / «WhatsApp» без ника — не контакт."""
+    c = (c or "").strip()
+    if not c:
+        return False
+    if re.search(r"@[A-Za-z0-9_]{4,}|https?://|t\.me/|[^\s@]+@[^\s@]+\.[^\s@]+", c):
+        return True
+    return len(re.sub(r"\D", "", c)) >= 7
+
+
+def fix_contact(contact, tg_username):
+    """Если контакт непригоден, а у автора есть ник в Telegram — подставляем его."""
+    if usable_contact(contact) or not tg_username:
+        return contact
+    return "@" + str(tg_username).lstrip("@")
+
+
 # ─────────────────────────── приём заявок с сайта ──────────────
 def _new_submission(sub_type, fields, auth, extra=None):
     tg_id = auth.get("id")
@@ -430,6 +448,7 @@ def _submit_vacancy():
         "desc": (form.get("city") or form.get("desc") or "").strip()[:600],
         "contact": (form.get("contact") or "").strip()[:200],
     }
+    fields["contact"] = fix_contact(fields["contact"], auth.get("username"))
     if not fields["title"] or not fields["contact"]:
         return jsonify({"ok": False, "error": "fields"}), 400
 
@@ -769,9 +788,9 @@ def approve_free(sub_id):
     if sub["type"] == "vacancy":
         db.reference(_deps["vacancies_ref"]).push({
             "org": f.get("org", ""), "title": f.get("title", ""), "salary": f.get("salary", ""),
-            "desc": f.get("desc", ""), "contact": f.get("contact", ""),
+            "desc": f.get("desc", ""), "contact": fix_contact(f.get("contact", ""), sub.get("tg_username")),
             "date": datetime.now().strftime("%Y-%m-%d"), "ts": time.time(),
-            "tg_user_id": sub.get("tg_user_id"),
+            "tg_user_id": sub.get("tg_user_id"), "tg_username": sub.get("tg_username", ""),
         })
         if sub.get("tg_user_id"):
             db.reference(f"{_VACANCY_LAST_POST_REF}/{sub['tg_user_id']}").set(time.time())
