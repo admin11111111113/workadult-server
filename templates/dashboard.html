@@ -1250,25 +1250,32 @@ function openVacFromHome(key) {
 
 function openStudioEditHtml(s, i) {
   const id = encodeURIComponent(s.id);
-  return `<details style="grid-column:1/-1;background:#14161c;border:1px solid #262a33;border-radius:10px;padding:10px 14px;margin:4px 0">
-    <summary style="cursor:pointer;color:#e6e8ee">${i + 1}. <b>${escHtml(s.name)}</b> <span style="color:#9aa0aa">— нажмите, чтобы изменить</span></summary>
-    <form method="post" action="/admin/open/${id}/save" style="margin-top:10px">
-      <div class="form-grid">
+  const editId = 'open-edit-' + i;
+  const src = s.photo ? (s.photo.startsWith('/') ? 'https://workadult.pro' + s.photo : s.photo) : '';
+  return `
+  <div>
+    <div class="cat-card" onclick="toggleSlot('${editId}')" style="cursor:pointer;opacity:.92">
+      <div class="cat-badge"><span class="badge-tier regular">⏳ Не подтверждена</span><span></span></div>
+      ${src ? `<img class="cat-photo" src="${escHtml(src)}" alt="" onerror="this.style.display='none'">` : ''}
+      <div class="cat-name">${escHtml(s.name)}</div>
+      <div class="cat-city">📍 ${escHtml(s.city || '')}</div>
+      ${s.desc ? `<div class="cat-desc">${escHtml(s.desc)}</div>` : ''}
+    </div>
+    <div class="slot-body" id="${editId}">
+      <form method="post" action="/admin/open/${id}/save">
         <div class="form-group"><label>Название</label><input name="name" value="${escHtml(s.name)}"></div>
         <div class="form-group"><label>Город</label><input name="city" value="${escHtml(s.city)}"></div>
-        <div class="form-group full"><label>Описание</label><textarea name="desc">${escHtml(s.desc || '')}</textarea></div>
-        <div class="form-group full"><label>Фото (ссылка)</label><input name="photo" value="${escHtml(s.photo || '')}">
-          ${s.photo ? `<img src="${s.photo.startsWith('/') ? 'https://workadult.pro' + s.photo : escHtml(s.photo)}" alt="" style="width:200px;aspect-ratio:8/5;object-fit:cover;border-radius:8px;margin-top:8px">` : ''}</div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn-save" type="submit">💾 Сохранить</button>
-      </div>
-    </form>
-    <form method="post" action="/admin/open/${id}/delete" onsubmit="return confirm('Удалить «${escHtml(s.name).replace(/'/g, '')}» из каталога?')" style="margin-top:6px">
-      <button class="btn btn-delete" type="submit">🗑 Удалить из каталога</button>
-    </form>
-  </details>`;
+        <div class="form-group"><label>Описание</label><textarea name="desc">${escHtml(s.desc || '')}</textarea></div>
+        <div class="form-group"><label>Фото (ссылка)</label><input name="photo" value="${escHtml(s.photo || '')}"></div>
+        <div class="actions-row"><button class="btn btn-save" type="submit">💾 Сохранить</button></div>
+      </form>
+      <form method="post" action="/admin/open/${id}/delete" onsubmit="return confirm('Удалить эту студию из каталога?')" style="margin-top:6px">
+        <button class="btn btn-delete" type="submit">🗑 Удалить из каталога</button>
+      </form>
+    </div>
+  </div>`;
 }
+
 function openCityStudios(city) {
   const inCity = s => (s.city || 'Без города') === city;
   const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.is_test_seed && inCity(s));
@@ -1278,7 +1285,7 @@ function openCityStudios(city) {
   document.getElementById('studioGrid').innerHTML =
     '<div style="grid-column:1/-1;font-weight:700;margin:4px 0">✅ Подтверждены (' + list.length + ')</div>' +
     (list.length ? list.map(studioCardHtml).join('') : '<div style="grid-column:1/-1;color:#9aa0aa;font-size:13px">Пока нет</div>') +
-    '<div style="grid-column:1/-1;font-weight:700;margin:16px 0 4px">⏳ Не подтверждены (' + open.length + ') — из открытых источников, ждут регистрации владельца</div>' +
+    '<div style="grid-column:1/-1;font-weight:700;margin:16px 0 4px">⏳ Не подтверждены (' + open.length + ') — из открытых источников, ждут регистрации владельца. Клик по карточке — изменить</div>' +
     (open.length ? open.map((s, i) => openStudioEditHtml(s, i)).join('')
                  : '<div style="grid-column:1/-1;color:#9aa0aa;font-size:13px">Нет</div>');
   document.getElementById('studioGridWrap').style.display = 'block';
