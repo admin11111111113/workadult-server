@@ -421,7 +421,7 @@
   <div class="section-block tab-panel" id="tab-vac">
     <h2>💼 Вакансии</h2>
     <div class="catalog-toolbar">
-      <span style="font-size:13px;color:#9aa0aa">Лента по дате (без закрепа) — новая вакансия всегда выше старой. Если у студии оплачен цветной тариф, её вакансия подсвечивается тем же цветом (не влияет на порядок). Публикация студиями — раз в неделю, у золота и «на главной» — 2 раза в неделю.</span>
+      <span style="font-size:13px;color:#9aa0aa">Лента по дате (без закрепа) — новая вакансия всегда выше старой. Если у студии оплачен цветной тариф, её вакансия подсвечивается тем же цветом (не влияет на порядок). Публикация бесплатная — одна вакансия в сутки на автора (вход через Telegram), каждая проходит вашу модерацию.</span>
       <button class="btn-add" onclick="toggleVacAddCard()">+ Добавить вакансию</button>
     </div>
 
@@ -622,7 +622,7 @@
   <!-- НА ГЛАВНОЙ -->
   <div class="section-block tab-panel" id="tab-home">
     <h2>🏠 Главная страница сайта</h2>
-    <div style="font-size:13px;color:#9aa0aa;margin-bottom:24px">Здесь ровно то, что реально показывается на workadult.pro — по 5 карточек каждого блока, как на сайте. Правки/удаление — в соседних вкладках («Вакансии» / «Каталог студий»), сюда добавлена только сама лента.</div>
+    <div style="font-size:13px;color:#9aa0aa;margin-bottom:24px">Карточки «Топ студий» на главной редактируются прямо здесь. Каталог студий и вакансии — в своих вкладках.</div>
 
     <h3 style="font-size:15px;margin:0 0 6px;color:#fff">🔥 Топ студий — 5 карточек на главной</h3>
     <div style="font-size:12.5px;color:#666;margin-bottom:12px">Отдельный список только для главной — каталог студий и вакансии он не трогает. Порядок здесь = порядок на сайте.</div>
@@ -749,9 +749,9 @@ function renderHomeTop() {
       <div class="form-group"><label>Цвет</label><select data-idx="${i}" data-f="tier">${Object.keys(HOME_TIERS).map(k => `<option value="${k}" ${v.tier === k ? 'selected' : ''}>${HOME_TIERS[k]}</option>`).join('')}</select></div>
       <div class="form-group full"><label>Фото (ссылка на картинку)</label><input data-idx="${i}" data-f="photo" value="${escHtml(v.photo)}"></div>
       <div class="form-group full" style="display:flex;gap:8px">
-        <button type="button" class="btn btn-move" onclick="moveHomeTop(${i},-1)">↑</button>
-        <button type="button" class="btn btn-move" onclick="moveHomeTop(${i},1)">↓</button>
-        <button type="button" class="btn btn-delete" onclick="removeHomeTopRow(${i})">✕ Убрать</button>
+        <button type="button" class="btn btn-move" style="width:auto;flex:0 0 auto" onclick="moveHomeTop(${i},-1)">↑</button>
+        <button type="button" class="btn btn-move" style="width:auto;flex:0 0 auto" onclick="moveHomeTop(${i},1)">↓</button>
+        <button type="button" class="btn btn-delete" style="width:auto;flex:0 0 auto" onclick="removeHomeTopRow(${i})">✕ Убрать</button>
       </div>
     </div>`).join('');
   document.querySelectorAll('#homeTopRows [data-f]').forEach(el => {
