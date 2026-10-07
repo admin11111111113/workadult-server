@@ -548,6 +548,8 @@ def _api_reviews():
             out.append({
                 "id": key, "studio_id": rec.get("studio_id"), "rating": rec.get("rating"),
                 "text": rec.get("text"), "author": rec.get("author"),
+                "official": bool(rec.get("official")), "edited": bool(rec.get("edited")),
+                "date": (rec.get("created_at") or "")[:10],
             })
     return jsonify({"ok": True, "reviews": out})
 
@@ -566,7 +568,30 @@ def admin_review_item_save(key, new_fields):
     rec = ref.get()
     if not rec:
         return False
+    # чужой отзыв поменяли по сути (текст/оценка) — на сайте честно пометим «отредактировано модератором»
+    if not rec.get("official") and (
+            ("text" in new_fields and new_fields["text"] != rec.get("text")) or
+            ("rating" in new_fields and new_fields["rating"] != rec.get("rating"))):
+        new_fields = dict(new_fields, edited=True)
     ref.update(new_fields)
+    return True
+
+
+def admin_official_review(studio_id, studio_name, rating, text):
+    """Отзыв от имени площадки: модератор сам проверил студию. На сайте —
+    с пометкой «✓ Проверено Workadult», автор всегда Workadult."""
+    rec = {"studio_id": studio_id, "studio_name": studio_name, "rating": rating, "text": text,
+           "author": "Workadult", "official": True, "status": "approved",
+           "created_at": datetime.now().isoformat()}
+    db.reference(_REVIEWS_REF).push(rec)
+    return True
+
+
+def admin_review_item_hide(key):
+    ref = db.reference(f"{_REVIEWS_REF}/{key}")
+    if not ref.get():
+        return False
+    ref.update({"status": "hidden"})
     return True
 
 

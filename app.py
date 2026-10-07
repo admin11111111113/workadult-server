@@ -569,6 +569,15 @@ def admin_dashboard():
         if isinstance(rec, dict) and rec.get("status") == "pending":
             pending_reviews.append({"key": key, **rec})
     pending_reviews.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    published_reviews = [{"key": k, **r} for k, r in raw_reviews.items()
+                         if isinstance(r, dict) and r.get("status") == "approved"]
+    published_reviews.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    # студии для формы «Отзыв Workadult»: неподтверждённые + размещённые (без тестовых)
+    review_targets = [{"id": x["id"], "name": x.get("name", ""), "city": x.get("city", "")} for x in _open_studios()]
+    for x in slots:
+        if x.get("status") == "active" and x.get("name") and not x.get("is_test_seed"):
+            review_targets.append({"id": "paid-%s" % x.get("slot"), "name": x.get("name", ""), "city": x.get("city", "")})
+    review_targets.sort(key=lambda t: (t["city"], t["name"].lower()))
 
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied, overview=overview,
@@ -580,6 +589,7 @@ def admin_dashboard():
                            studio_features=STUDIO_FEATURES, studio_feature_labels=STUDIO_FEATURE_LABELS,
                            review_studios=review_studios, review_free=review_free,
                            pending_payment=pending_payment, pending_reviews=pending_reviews,
+                           published_reviews=published_reviews, review_targets=review_targets,
                            moderation_tier_label=moderation.TIER_LABEL)
 
 @app.route("/admin/pricing/save", methods=["POST"])
@@ -995,7 +1005,27 @@ def admin_review_item_save(key):
     moderation.admin_review_item_save(key, new_fields)
     if request.form.get("publish") == "on":
         moderation.admin_review_item_approve(key)
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_dashboard") + "#reviews")
+
+@app.route("/admin/review-official", methods=["POST"])
+@_require_admin
+def admin_review_official():
+    sid = (request.form.get("studio_id") or "").strip()[:80]
+    name = (request.form.get("studio_name") or "").strip()[:120]
+    text = (request.form.get("text") or "").strip()[:800]
+    try:
+        rating = int(request.form.get("rating", 0))
+    except ValueError:
+        rating = 0
+    if sid and text and 1 <= rating <= 5:
+        moderation.admin_official_review(sid, name, rating, text)
+    return redirect(url_for("admin_dashboard") + "#reviews")
+
+@app.route("/admin/review-item/<key>/hide", methods=["POST"])
+@_require_admin
+def admin_review_item_hide(key):
+    moderation.admin_review_item_hide(key)
+    return redirect(url_for("admin_dashboard") + "#reviews")
 
 @app.route("/admin/review-item/<key>/reject", methods=["POST"])
 @_require_admin

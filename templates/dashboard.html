@@ -568,6 +568,36 @@
     <h2>📝 Отзывы</h2>
     <div style="font-size:13px;color:#9aa0aa;margin-bottom:16px">Отзывы о студиях (1-5 звёзд) со страниц студий — на модерации, до публикации. Можно поправить текст/оценку и опубликовать, или отклонить.</div>
 
+    <div class="city-stats" style="margin-bottom:28px">
+      <h3>✓ Отзыв Workadult — вы сами проверили студию</h3>
+      <div style="font-size:12.5px;color:#9aa0aa;margin-bottom:12px">Публикуется сразу, от имени площадки, с пометкой «✓ Проверено Workadult».</div>
+      <form method="post" action="/admin/review-official" onsubmit="return pickReviewStudio()">
+        <div class="form-grid">
+          <div class="form-group full"><label>Студия (начните вводить город или название)</label>
+            <input id="rvStudioPick" list="rvStudioList" placeholder="Москва — Bankroll Studio" autocomplete="off" required>
+            <datalist id="rvStudioList">{% for t in review_targets %}<option value="{{ t.city }} — {{ t.name }}"></option>{% endfor %}</datalist>
+            <input type="hidden" name="studio_id" id="rvStudioId"><input type="hidden" name="studio_name" id="rvStudioName">
+          </div>
+          <div class="form-group"><label>Оценка</label>
+            <select name="rating">{% for n in [5,4,3,2,1] %}<option value="{{ n }}">{{ '★' * n }}{{ '☆' * (5 - n) }} ({{ n }})</option>{% endfor %}</select>
+          </div>
+          <div class="form-group full"><label>Текст (что проверили: условия, процент, выплаты, помещение)</label><textarea name="text" required></textarea></div>
+        </div>
+        <div class="actions-row"><button class="btn btn-save" type="submit">✓ Опубликовать отзыв Workadult</button></div>
+      </form>
+    </div>
+    <script>
+      const REVIEW_TARGETS = {{ review_targets | tojson }};
+      function pickReviewStudio() {
+        const v = document.getElementById('rvStudioPick').value.trim();
+        const t = REVIEW_TARGETS.find(x => (x.city + ' — ' + x.name) === v);
+        if (!t) { alert('Выберите студию из списка'); return false; }
+        document.getElementById('rvStudioId').value = t.id;
+        document.getElementById('rvStudioName').value = t.name;
+        return true;
+      }
+    </script>
+
     {% if not pending_reviews %}
     <div class="cat-empty">Нет новых отзывов на рассмотрении</div>
     {% endif %}
@@ -616,6 +646,45 @@
       </div>
       {% endfor %}
     </div>
+    {% endif %}
+
+    <h3 style="font-size:15px;margin:32px 0 12px;color:#fff">✅ Опубликованные отзывы ({{ published_reviews|length }})</h3>
+    <div style="font-size:12.5px;color:#9aa0aa;margin-bottom:12px">Можно поправить или скрыть. Если меняете текст или оценку чужого отзыва — на сайте появится «отредактировано модератором».</div>
+    {% if published_reviews %}
+    <div class="cat-grid">
+      {% for r in published_reviews %}
+      <div class="cat-card">
+        <div class="cat-badge">
+          <span>{{ '★' * (r.rating or 0) }}{{ '☆' * (5 - (r.rating or 0)) }}</span>
+          <span>{% if r.official %}✓ Workadult{% elif r.edited %}✏️ отредактирован{% else %}{{ (r.created_at or '')[:10] }}{% endif %}</span>
+        </div>
+        <div class="cat-name">{{ r.studio_name or r.studio_id }}</div>
+        <div class="cat-contacts">{{ r.author }}</div>
+        <div class="cat-desc">{{ r.text }}</div>
+        <div class="cat-actions">
+          <button class="btn btn-move" type="button" onclick="toggleSlot('rvp-{{ r.key }}')">✏️ Изменить</button>
+          <form method="post" action="/admin/review-item/{{ r.key }}/hide" style="display:inline" onsubmit="return confirm('Скрыть отзыв с сайта?')">
+            <button class="btn btn-delete" type="submit">🙈 Скрыть</button>
+          </form>
+        </div>
+        <div class="slot-body" id="rvp-{{ r.key }}" style="margin-top:12px">
+          <form method="post" action="/admin/review-item/{{ r.key }}/save">
+            <input type="hidden" name="studio_name" value="{{ r.studio_name }}">
+            <input type="hidden" name="author" value="{{ r.author }}">
+            <div class="form-grid">
+              <div class="form-group"><label>Оценка</label>
+                <select name="rating">{% for n in [1,2,3,4,5] %}<option value="{{ n }}" {% if r.rating == n %}selected{% endif %}>{{ '★' * n }}{{ '☆' * (5 - n) }} ({{ n }})</option>{% endfor %}</select>
+              </div>
+              <div class="form-group full"><label>Текст</label><textarea name="text">{{ r.text }}</textarea></div>
+            </div>
+            <div class="actions-row"><button class="btn btn-save" type="submit">💾 Сохранить</button></div>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="cat-empty">Опубликованных отзывов пока нет</div>
     {% endif %}
   </div>
 
@@ -708,7 +777,7 @@ function showTab(name) {
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === 'tab-' + name));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
 }
-showTab(['home', 'catalog', 'vac'].includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'overview');
+showTab(['home', 'catalog', 'vac', 'reviews'].includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'overview');
 
 /* ---------- Демо-заглушки: свободный список (add/remove), сразу видно и превью, и поля ---------- */
 function escHtml(s) {
