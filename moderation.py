@@ -34,6 +34,8 @@ USDT-TRC20, допуск ±3 USDT, идемпотентность по txid.
 админа ПРОВЕРЯЮТСЯ по chat_id — иначе любой пользователь того же бота мог
 бы подделать callback_data и опубликовать/удалить чужую заявку.
 """
+import hashlib
+import hmac
 import os
 import re
 import time
@@ -44,6 +46,33 @@ from firebase_admin import db
 from flask import request, jsonify
 
 WA_BOT_TOKEN = os.environ.get("WA_BOT_TOKEN", "").strip()
+
+
+# ─────────────── проверка входа через Telegram Login Widget ───────────────
+# Виджет на сайте — бот из LOGIN_BOT_TOKEN (@Workadultotvet_bot). Подпись
+# сверяется по https://core.telegram.org/widgets/login#checking-authorization.
+# Пока LOGIN_BOT_TOKEN не задан — проверка выключена (поведение как раньше).
+LOGIN_BOT_TOKEN = os.environ.get("LOGIN_BOT_TOKEN", "").strip()
+_AUTH_MAX_AGE = 2 * 86400
+
+def _auth_ok(auth):
+    if not LOGIN_BOT_TOKEN:
+        return True
+    if not isinstance(auth, dict) or not auth.get("hash") or not auth.get("id"):
+        return False
+    try:
+        if time.time() - int(auth.get("auth_date", 0)) > _AUTH_MAX_AGE:
+            return False
+    except (TypeError, ValueError):
+        return False
+    check = "\n".join(f"{k}={auth[k]}" for k in sorted(auth) if k != "hash" and auth[k] is not None)
+    for tok in (LOGIN_BOT_TOKEN, WA_BOT_TOKEN):
+        if not tok:
+            continue
+        secret = hashlib.sha256(tok.encode()).digest()
+        if hmac.compare_digest(hmac.new(secret, check.encode(), hashlib.sha256).hexdigest(), str(auth["hash"])):
+            return True
+    return False
 WA_ADMIN_CHAT_ID = os.environ.get("WA_ADMIN_CHAT_ID", "").strip()
 # Секрет для проверки заголовка X-Telegram-Bot-Api-Secret-Token — без него
 # кто угодно мог бы POST-нуть на /tg/webhook поддельное «одобрение».
@@ -292,6 +321,8 @@ def _submit_studio():
     оплаты (см. _finish_submit_payment -> _notify_admin_review)."""
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
+    if not _auth_ok(auth):
+        return jsonify({"ok": False, "error": "auth"}), 403
     form = data.get("form") or {}
     tg_id = auth.get("id")
     if not tg_id:
@@ -389,6 +420,8 @@ def _vacancy_status():
 def _submit_vacancy():
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
+    if not _auth_ok(auth):
+        return jsonify({"ok": False, "error": "auth"}), 403
     form = data.get("form") or {}
     fields = {
         "org": (form.get("studio") or form.get("org") or "").strip()[:120],
@@ -417,6 +450,8 @@ def _submit_vacancy():
 def _submit_resume():
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
+    if not _auth_ok(auth):
+        return jsonify({"ok": False, "error": "auth"}), 403
     form = data.get("form") or {}
     fields = {
         "experience": (form.get("experience") or "").strip()[:500],
@@ -1111,6 +1146,8 @@ def _confirm_payment():
     на кошелёк. Фронт опрашивает этот эндпоинт, пока не найдёт (или не бросит)."""
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
+    if not _auth_ok(auth):
+        return jsonify({"ok": False, "error": "auth"}), 403
     tg_id = auth.get("id")
     if not tg_id:
         return jsonify({"ok": False, "error": "fields"}), 400
@@ -1161,6 +1198,8 @@ def _report_payment_issue():
     вручную через веб-админку/Telegram."""
     data = request.get_json(force=True, silent=True) or {}
     auth = data.get("auth") or {}
+    if not _auth_ok(auth):
+        return jsonify({"ok": False, "error": "auth"}), 403
     tg_id = auth.get("id")
     note = (data.get("message") or "").strip()[:500]
     if not tg_id:
