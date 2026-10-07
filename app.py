@@ -130,13 +130,32 @@ def _get_home_top():
     return top
 
 
-_OPEN_CACHE = {"ts": 0, "items": []}
+_OPEN_REF = "/workadult_open_studios"   # студии из открытых источников (серые карточки), редактируются в админке
+OPEN_FIELDS = ("name", "city", "desc", "photo")
+
+def _open_studios_all():
+    """Серые карточки каталога. Живут в Firebase; при первом обращении
+    переносятся из studios.json сайта (дальше сайт берёт их из /api/open-studios)."""
+    raw = db.reference(_OPEN_REF).get()
+    if raw is None:
+        try:
+            r = requests.get("https://workadult.pro/studios.json", timeout=10)
+            data = json.loads(r.content.decode("utf-8-sig"))
+            items = {x["id"]: x for x in data.get("studios", [])
+                     if isinstance(x, dict) and x.get("source") == "open" and x.get("id")}
+        except Exception:
+            return []
+        if not items:
+            return []
+        db.reference(_OPEN_REF).set(items)
+        raw = items
+    out = [dict(v, id=k) for k, v in raw.items() if isinstance(v, dict) and not v.get("deleted")]
+    out.sort(key=lambda x: (x.get("city", ""), x.get("name", "").lower()))
+    return out
 
 def _open_studios():
-    """Студии из открытых источников (серые карточки) — живут в studios.json
-    на сайте, не в Firebase. Для админки: сколько их по городам и какие."""
-    if time.time() - _OPEN_CACHE["ts"] < 600:
-        return _OPEN_CACHE["items"]
+    return [{"id": x["id"], "name": x.get("name", ""), "city": x.get("city", ""),
+             "desc": x.get("desc", ""), "photo": x.get("photo", "")} for x in _open_studios_all()]
     try:
         r = requests.get("https://workadult.pro/studios.json", timeout=8)
         data = json.loads(r.content.decode("utf-8-sig"))
@@ -389,6 +408,28 @@ def admin_home_top_save():
             items.append(it)
     db.reference(_HOME_TOP_REF).set({"items": items})
     return redirect(url_for("admin_dashboard") + "#home")
+
+@app.route("/api/open-studios", methods=["GET"])
+def api_open_studios():
+    return jsonify({"ok": True, "studios": _open_studios_all()})
+
+@app.route("/admin/open/<sid>/save", methods=["POST"])
+@_require_admin
+def admin_open_save(sid):
+    ref = db.reference(f"{_OPEN_REF}/{sid}")
+    if not ref.get():
+        return redirect(url_for("admin_dashboard"))
+    upd = {f: (request.form.get(f) or "").strip()[:600] for f in OPEN_FIELDS if request.form.get(f) is not None}
+    if upd.get("photo") and not upd["photo"].startswith("/images/studio-ill/"):
+        upd["photo_ill"] = False
+    ref.update(upd)
+    return redirect(url_for("admin_dashboard") + "#catalog")
+
+@app.route("/admin/open/<sid>/delete", methods=["POST"])
+@_require_admin
+def admin_open_delete(sid):
+    db.reference(f"{_OPEN_REF}/{sid}").update({"deleted": True})
+    return redirect(url_for("admin_dashboard") + "#catalog")
 
 @app.route("/api/board", methods=["GET"])
 def api_board():
