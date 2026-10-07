@@ -641,31 +641,14 @@
     <h2>🏠 Главная страница сайта</h2>
     <div style="font-size:13px;color:#9aa0aa;margin-bottom:24px">Здесь ровно то, что реально показывается на workadult.pro — по 5 карточек каждого блока, как на сайте. Правки/удаление — в соседних вкладках («Вакансии» / «Каталог студий»), сюда добавлена только сама лента.</div>
 
-    <h3 style="font-size:15px;margin:0 0 12px;color:#fff">🔥 Свежие вакансии (топ-5 на сайте)</h3>
-    {% if vac_top5 %}
-    <div class="vboard-row">
-      {% for v in vac_top5 %}
-      <div class="vboard-card" onclick="openVacFromHome('{{ v.key }}')">
-        <div class="org">{{ v.org }}</div>
-        <div class="title">{{ v.title }}</div>
-        {% if v.salary %}<div class="sal">{{ v.salary }}</div>{% endif %}
-        <div class="ct">Написать →</div>
-      </div>
-      {% endfor %}
+    <h3 style="font-size:15px;margin:0 0 6px;color:#fff">🔥 Топ студий — 5 карточек на главной</h3>
+    <div style="font-size:12.5px;color:#666;margin-bottom:12px">Отдельный список только для главной — каталог студий и вакансии он не трогает. Порядок здесь = порядок на сайте.</div>
+    <div class="vboard-row" id="homeTopPreview"></div>
+    <div id="homeTopRows" style="margin-top:16px"></div>
+    <div class="actions-row" style="margin-top:6px;margin-bottom:8px">
+      <button type="button" class="btn btn-move" onclick="addHomeTopRow()">+ Добавить карточку</button>
+      <button type="button" class="btn btn-save" onclick="saveHomeTop()">💾 Сохранить главную</button>
     </div>
-    {% else %}
-    <div style="font-size:12.5px;color:#666;margin-bottom:10px">Настоящих вакансий пока нет — на сайте прямо сейчас вместо этого блока показываются демо-заглушки (редактируются во вкладке «Вакансии»):</div>
-    <div class="vboard-row">
-      {% for v in demo.vacancies %}
-      <div class="vboard-card" style="opacity:.7">
-        <div class="org">{{ v.org }}</div>
-        <div class="title">{{ v.title }}</div>
-        {% if v.salary %}<div class="sal">{{ v.salary }}</div>{% endif %}
-        <div class="ct">заглушка</div>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
 
     <h3 style="font-size:15px;margin:32px 0 12px;color:#fff">⭐ Рекомендуем — места «на главной» ($100/мес, топ-5)</h3>
     <div class="catalog-toolbar">
@@ -742,7 +725,7 @@ function showTab(name) {
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === 'tab-' + name));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
 }
-showTab('overview');
+showTab((location.hash || '').slice(1) === 'home' ? 'home' : 'overview');
 
 /* ---------- Демо-заглушки: свободный список (add/remove), сразу видно и превью, и поля ---------- */
 function escHtml(s) {
@@ -755,6 +738,63 @@ function fmtPercent(v) {
   if (!v || v.indexOf('%') !== -1) return v;
   return /^\d+([.,]\d+)?(\s*-\s*\d+([.,]\d+)?)?$/.test(v) ? v + '%' : v;
 }
+
+/* ---------- Главная: топ-5 карточек (свой список) ---------- */
+let HOME_TOP_STATE = {{ home_top | tojson }};
+const HOME_TIERS = {gold: '🥇 Золото', silver: '🥈 Серебро', bronze: '🥉 Бронза', regular: 'Обычная'};
+function homeTopCardHtml(v) {
+  const t = (v.tier && v.tier !== 'regular') ? ' tier-' + v.tier : '';
+  return '<div class="vboard-card' + t + '">' +
+    (v.photo ? '<img src="' + escHtml(v.photo) + '" alt="" style="width:100%;aspect-ratio:8/5;object-fit:cover;border-radius:10px;margin-bottom:8px">' : '') +
+    '<div class="org">' + escHtml(v.city || '') + '</div>' +
+    '<div class="title">' + escHtml(v.name || '') + '</div>' +
+    (v.percent ? '<div class="sal">' + escHtml(fmtPercent(v.percent)) + '</div>' : '') + '</div>';
+}
+function renderHomeTopPreview() {
+  document.getElementById('homeTopPreview').innerHTML = HOME_TOP_STATE.length
+    ? HOME_TOP_STATE.map(homeTopCardHtml).join('')
+    : '<div class="cat-empty">Карточек нет — на главной покажутся демо-студии</div>';
+}
+function renderHomeTop() {
+  renderHomeTopPreview();
+  document.getElementById('homeTopRows').innerHTML = HOME_TOP_STATE.map((v, i) => `
+    <div class="form-grid" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #262a33">
+      <div class="form-group"><label>${i + 1}. Название студии</label><input data-idx="${i}" data-f="name" value="${escHtml(v.name)}"></div>
+      <div class="form-group"><label>Город</label><input data-idx="${i}" data-f="city" value="${escHtml(v.city)}"></div>
+      <div class="form-group"><label>Условия / процент</label><input data-idx="${i}" data-f="percent" value="${escHtml(v.percent)}"></div>
+      <div class="form-group"><label>Контакт</label><input data-idx="${i}" data-f="contact" value="${escHtml(v.contact)}"></div>
+      <div class="form-group"><label>Цвет</label><select data-idx="${i}" data-f="tier">${Object.keys(HOME_TIERS).map(k => `<option value="${k}" ${v.tier === k ? 'selected' : ''}>${HOME_TIERS[k]}</option>`).join('')}</select></div>
+      <div class="form-group full"><label>Фото (ссылка на картинку)</label><input data-idx="${i}" data-f="photo" value="${escHtml(v.photo)}"></div>
+      <div class="form-group full" style="display:flex;gap:8px">
+        <button type="button" class="btn btn-move" onclick="moveHomeTop(${i},-1)">↑</button>
+        <button type="button" class="btn btn-move" onclick="moveHomeTop(${i},1)">↓</button>
+        <button type="button" class="btn btn-delete" onclick="removeHomeTopRow(${i})">✕ Убрать</button>
+      </div>
+    </div>`).join('');
+  document.querySelectorAll('#homeTopRows [data-f]').forEach(el => {
+    const upd = () => { HOME_TOP_STATE[+el.dataset.idx][el.dataset.f] = el.value; renderHomeTopPreview(); };
+    el.addEventListener('input', upd); el.addEventListener('change', upd);
+  });
+}
+function addHomeTopRow() {
+  if (HOME_TOP_STATE.length >= 5) { alert('На главной максимум 5 карточек'); return; }
+  HOME_TOP_STATE.push({name: '', city: '', percent: '', photo: '', contact: '', tier: 'regular'});
+  renderHomeTop();
+}
+function removeHomeTopRow(i) { HOME_TOP_STATE.splice(i, 1); renderHomeTop(); }
+function moveHomeTop(i, dir) {
+  const j = i + dir; if (j < 0 || j >= HOME_TOP_STATE.length) return;
+  [HOME_TOP_STATE[i], HOME_TOP_STATE[j]] = [HOME_TOP_STATE[j], HOME_TOP_STATE[i]]; renderHomeTop();
+}
+function saveHomeTop() {
+  const form = document.createElement('form');
+  form.method = 'post'; form.action = '/admin/home-top/save';
+  const add = (n, v) => { const x = document.createElement('input'); x.type = 'hidden'; x.name = n; x.value = v || ''; form.appendChild(x); };
+  add('home_count', HOME_TOP_STATE.length);
+  HOME_TOP_STATE.forEach((v, i) => ['name', 'city', 'percent', 'photo', 'contact', 'tier'].forEach(f => add(`home_${f}_${i}`, v[f])));
+  document.body.appendChild(form); form.submit();
+}
+renderHomeTop();
 
 
 let DEMO_STUDIO_STATE = {{ demo.studios | tojson }};

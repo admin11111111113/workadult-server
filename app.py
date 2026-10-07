@@ -50,6 +50,7 @@ _LISTINGS_REF = "/workadult_studios"
 _VACANCIES_REF = "/workadult_vacancies"
 _PRICING_REF = "/workadult_pricing"
 _DEMO_REF = "/workadult_demo"
+_HOME_TOP_REF = "/workadult_home_top"   # 5 карточек «Топ студий» на главной — отдельно от каталога
 
 # Демо-заглушки (3 студии + 3 вакансии), которые сайт показывает вместо
 # пустого каталога/доски, пока нет ни одного настоящего объявления — сами
@@ -99,6 +100,29 @@ def _get_demo():
     studios = [s for s in _as_list(raw.get("studios")) if isinstance(s, dict)]
     # Демо-вакансии отключены: при пустой ленте сайт пишет «вакансий пока нет».
     return {"studios": studios, "vacancies": []}
+
+
+HOME_TOP_FIELDS = ("name", "city", "percent", "photo", "contact", "tier")
+HOME_TOP_MAX = 5
+
+def _get_home_top():
+    """Топ-5 карточек главной — свой список, редактируется во вкладке
+    «Главная страница». Пока ни разу не сохраняли — берём то, что главная
+    показывала раньше (лучшие по тиру места каталога), чтобы ничего не пропало."""
+    raw = db.reference(_HOME_TOP_REF).get()
+    if raw is not None:
+        items = [x for x in _as_list(raw.get("items") if isinstance(raw, dict) else raw) if isinstance(x, dict)]
+        return [{f: x.get(f, "") for f in HOME_TOP_FIELDS} for x in items][:HOME_TOP_MAX]
+    rank = {"gold": 0, "silver": 1, "bronze": 2, "regular": 3}
+    recs = []
+    for rec in (db.reference(_LISTINGS_REF).get() or {}).values():
+        if isinstance(rec, dict) and rec.get("status") == "active" and rec.get("name"):
+            tier, _ = _effective_boost(rec)
+            recs.append({"name": rec.get("name", ""), "city": rec.get("city", ""), "percent": rec.get("percent", ""),
+                         "photo": rec.get("cover_photo") or rec.get("photo") or "", "contact": rec.get("contacts", ""),
+                         "tier": tier if tier in rank else "regular"})
+    recs.sort(key=lambda x: rank.get(x["tier"], 3))
+    return recs[:HOME_TOP_MAX]
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")
@@ -321,6 +345,27 @@ def api_tier_availability():
     tiers["home"] = {"cap": home_cap, "used": home_used, "available": home_used < home_cap, "price": pricing["home_price"]}
     return jsonify({"ok": True, "city": city, "submit_price": pricing["submit_price"], "tiers": tiers})
 
+@app.route("/api/home-top", methods=["GET"])
+def api_home_top():
+    return jsonify({"ok": True, "items": _get_home_top()})
+
+@app.route("/admin/home-top/save", methods=["POST"])
+@_require_admin
+def admin_home_top_save():
+    try:
+        n = min(HOME_TOP_MAX, max(0, int(request.form.get("home_count", 0))))
+    except ValueError:
+        n = 0
+    items = []
+    for i in range(n):
+        it = {f: (request.form.get(f"home_{f}_{i}") or "").strip()[:400] for f in HOME_TOP_FIELDS}
+        if it["tier"] not in ("gold", "silver", "bronze", "regular"):
+            it["tier"] = "regular"
+        if it["name"]:
+            items.append(it)
+    db.reference(_HOME_TOP_REF).set({"items": items})
+    return redirect(url_for("admin_dashboard") + "#home")
+
 @app.route("/api/board", methods=["GET"])
 def api_board():
     """Вакансии — лента по дате (без закрепа), карточка подсвечивается
@@ -445,7 +490,7 @@ def admin_dashboard():
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
-                           demo=_get_demo(),
+                           demo=_get_demo(), home_top=_get_home_top(),
                            catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
