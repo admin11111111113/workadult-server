@@ -128,7 +128,7 @@ MAX_STUDIO_PHOTOS = 5
 # больше не показывается, а в городе тихо съезжает обратно на обычный цвет и
 # позицию; сама публикация НЕ пропадает (она разовая и навсегда).
 PRICING_DEFAULTS = {
-    "submit_price": 70,
+    "submit_price": 15,
     "bronze_count": 5, "bronze_price": 15,
     "silver_count": 5, "silver_price": 30,
     "gold_count": 5, "gold_price": 50,
