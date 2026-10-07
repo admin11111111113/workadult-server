@@ -541,9 +541,6 @@
       <button class="btn-add" onclick="toggleStudioAddCard()">+ Добавить объявление</button>
     </div>
     <div class="actions-row" style="margin-bottom:20px">
-      <form method="post" action="/admin/seed-test-studios" style="display:inline">
-        <button class="btn btn-move" type="submit">🧪 Создать 40 тестовых (Москва+СПб, все тиры)</button>
-      </form>
       <form method="post" action="/admin/cleanup-test-studios" style="display:inline" onsubmit="return confirm('Удалить все тестовые объявления (is_test_seed)?')">
         <button class="btn btn-delete" type="submit">🗑 Удалить тестовые</button>
       </form>
@@ -1189,33 +1186,36 @@ function studioCardHtml(s) {
   `;
 }
 
+const OPEN_STUDIOS = {{ open_studios | tojson }};
 function renderCityTable() {
   const q = (document.getElementById('studioSearch').value || '').trim().toLowerCase();
   const occupied = ALL_SLOTS.filter(s => s.name && s.status === 'active');
   const byCity = {};
+  const row = c => (byCity[c] = byCity[c] || {total: 0, paid: 0, open: 0});
   occupied.forEach(s => {
-    const c = s.city || 'Без города';
-    if (!byCity[c]) byCity[c] = {total: 0, paid: 0};
-    byCity[c].total++;
-    if (PAID_TIERS.includes(s.boost_tier)) byCity[c].paid++;
+    const r = row(s.city || 'Без города');
+    r.total++;
+    if (PAID_TIERS.includes(s.boost_tier)) r.paid++;
   });
+  OPEN_STUDIOS.forEach(s => { const r = row(s.city || 'Без города'); r.total++; r.open++; });
   const cities = Object.keys(byCity)
     .filter(c => !q || c.toLowerCase().includes(q))
     .sort((a, b) => byCity[b].total - byCity[a].total);
 
   const tbody = document.querySelector('#cityTable tbody');
   if (!cities.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="cat-empty">${Object.keys(byCity).length ? 'Город не найден' : 'Пока нет размещённых студий'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="cat-empty">${Object.keys(byCity).length ? 'Город не найден' : 'Пока нет студий'}</td></tr>`;
     return;
   }
   tbody.innerHTML =
-    `<tr><th>Город</th><th>Студий</th><th>Платных мест</th></tr>` +
+    `<tr><th>Город</th><th>Студий всего</th><th>Не подтверждены</th><th>Платных мест</th></tr>` +
     cities.map(c => {
       const d = byCity[c];
       const pct = Math.min(100, Math.round(d.paid / PAID_CAP_PER_CITY * 100));
       return `<tr class="city-row-clickable" onclick="openCityStudios('${c.replace(/'/g, "\\'")}')">
         <td>📍 ${c}</td>
         <td>${d.total}</td>
+        <td style="color:#9aa0aa">${d.open || '—'}</td>
         <td><span class="paid-bar"><span style="width:${pct}%"></span></span>${d.paid}/${PAID_CAP_PER_CITY}</td>
       </tr>`;
     }).join('');
@@ -1244,8 +1244,11 @@ function openVacFromHome(key) {
 function openCityStudios(city) {
   const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && (s.city || 'Без города') === city);
   document.getElementById('studioGridCity').textContent = '📍 ' + city;
-  document.getElementById('studioGridSummary').textContent = `${list.length} студий в городе`;
-  document.getElementById('studioGrid').innerHTML = list.map(studioCardHtml).join('');
+  const open = OPEN_STUDIOS.filter(s => (s.city || 'Без города') === city);
+  document.getElementById('studioGridSummary').textContent = `${list.length} размещено · ${open.length} не подтверждены (из открытых источников, ждут регистрации владельца)`;
+  document.getElementById('studioGrid').innerHTML = list.map(studioCardHtml).join('') +
+    (open.length ? '<div style="grid-column:1/-1;margin-top:10px;color:#9aa0aa;font-size:13px;line-height:1.8"><b>Не подтверждены:</b> ' +
+      open.map(s => escHtml(s.name)).join(' · ') + '</div>' : '');
   document.getElementById('studioGridWrap').style.display = 'block';
   document.getElementById('studioGridWrap').scrollIntoView({behavior: 'smooth', block: 'start'});
 }

@@ -123,7 +123,29 @@ def _get_home_top():
                          "photo": rec.get("cover_photo") or rec.get("photo") or "", "contact": rec.get("contacts", ""),
                          "tier": tier if tier in rank else "regular"})
     recs.sort(key=lambda x: rank.get(x["tier"], 3))
-    return recs[:HOME_TOP_MAX]
+    top = recs[:HOME_TOP_MAX]
+    if top:
+        # фиксируем один раз — дальше главная не зависит от каталога (и от удаления тестовых мест)
+        db.reference(_HOME_TOP_REF).set({"items": top})
+    return top
+
+
+_OPEN_CACHE = {"ts": 0, "items": []}
+
+def _open_studios():
+    """Студии из открытых источников (серые карточки) — живут в studios.json
+    на сайте, не в Firebase. Для админки: сколько их по городам и какие."""
+    if time.time() - _OPEN_CACHE["ts"] < 600:
+        return _OPEN_CACHE["items"]
+    try:
+        r = requests.get("https://workadult.pro/studios.json", timeout=8)
+        data = json.loads(r.content.decode("utf-8-sig"))
+        items = [{"name": x.get("name", ""), "city": x.get("city", ""), "id": x.get("id", "")}
+                 for x in data.get("studios", []) if isinstance(x, dict) and x.get("source") == "open"]
+        _OPEN_CACHE.update(ts=time.time(), items=items)
+    except Exception:
+        pass
+    return _OPEN_CACHE["items"]
 
 VACANCY_FIELDS = ("org", "title", "salary", "desc", "contact")
 CATALOG_FORMATS = ("studio", "home", "pair", "guys", "nonnude", "trans")
@@ -492,7 +514,7 @@ def admin_dashboard():
     return render_template("dashboard.html", slots=slots,
                            total_clicks=total_clicks, occupied=occupied,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
-                           demo=_get_demo(), home_top=_get_home_top(),
+                           demo=_get_demo(), home_top=_get_home_top(), open_studios=_open_studios(),
                            catalog_formats=CATALOG_FORMATS,
                            catalog_fmt_labels=CATALOG_FMT_LABELS, pricing=pricing,
                            boost_labels=BOOST_LABELS, boost_tiers=BOOST_TIERS,
