@@ -189,7 +189,8 @@ def _check_secret():
 # ─────────────────────────── форматирование заявки ──────────────
 def _fmt_fields(sub_type, f):
     if sub_type == "studio":
-        return (f"🏢 <b>{f.get('name','')}</b>\n📍 {f.get('city','')}"
+        return ((f"🔁 <b>Подтверждение карточки из каталога</b> ({f.get('claim_of')})\n" if f.get('claim_of') else "")
+                + f"🏢 <b>{f.get('name','')}</b>\n📍 {f.get('city','')}"
                 + (f" · 💰 {f.get('percent')}" if f.get('percent') else "")
                 + f"\n{f.get('desc','')}\n📞 {f.get('contact','')}"
                 + (f" · 📱 {f.get('phone')}" if f.get('phone') else "")
@@ -358,6 +359,8 @@ def _submit_studio():
         "social_telegram": (form.get("social_telegram") or "").strip()[:120],
         "social_instagram": (form.get("social_instagram") or "").strip()[:120],
         "social_vk": (form.get("social_vk") or "").strip()[:120],
+        # «Это моя студия» — подтверждение серой карточки из каталога (id open-…)
+        "claim_of": (form.get("claim_of") or "").strip()[:80],
     }
     fmt_raw = form.get("fmt") or []
     if not isinstance(fmt_raw, list):
@@ -978,6 +981,7 @@ def publish_studio(sub_id):
         "boost_price": boost_price,
         "clicks": 0, "owner_tg_id": sub["tg_user_id"],
         "promo_type": f.get("promo_type") or "studio",
+        "claim_of": f.get("claim_of", ""),
     }
     for fmt in _VALID_FORMATS:
         rec["fmt_" + fmt] = fmt in picked_fmt
