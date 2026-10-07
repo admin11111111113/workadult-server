@@ -510,8 +510,26 @@ def admin_dashboard():
         slot = {"slot": n, **rec, "boost_tier": eff_tier, "boost_price": eff_price,
                "boost_days_left": boost_days_left}
         slots.append(slot)
-    total_clicks = sum(int(s.get("clicks", 0)) for s in slots)
-    occupied = sum(1 for s in slots if s.get("status") == "active" and s.get("name"))
+    # Обзор: только реальные студии (тестовые места не считаем)
+    real = [x for x in slots if x.get("status") == "active" and x.get("name") and not x.get("is_test_seed")]
+    total_clicks = sum(int(x.get("clicks", 0) or 0) for x in real)
+    occupied = len(real)
+    boosted = [x for x in real if x.get("boost_tier") in ("bronze", "silver", "gold", "home")]
+    open_list = _open_studios()
+    city_stats = {}
+    for x in real:
+        c = x.get("city") or "Без города"
+        city_stats.setdefault(c, [0, 0])[0] += 1
+    for x in open_list:
+        c = x.get("city") or "Без города"
+        city_stats.setdefault(c, [0, 0])[1] += 1
+    overview = {
+        "confirmed": occupied, "unconfirmed": len(open_list), "cities": len(city_stats),
+        "boosts": len(boosted),
+        "boost_income": sum(int(x.get("boost_price") or 0) for x in boosted),
+        "tests": sum(1 for x in slots if x.get("status") == "active" and x.get("is_test_seed")),
+        "city_rows": sorted(([c, v[0], v[1]] for c, v in city_stats.items()), key=lambda r: -(r[1] + r[2])),
+    }
 
     raw_vac = db.reference(_VACANCIES_REF).get() or {}
     vacancies = []
@@ -553,7 +571,7 @@ def admin_dashboard():
     pending_reviews.sort(key=lambda x: x.get("created_at") or "", reverse=True)
 
     return render_template("dashboard.html", slots=slots,
-                           total_clicks=total_clicks, occupied=occupied,
+                           total_clicks=total_clicks, occupied=occupied, overview=overview,
                            slot_count=SLOT_COUNT, vacancies=vacancies, vac_top5=vac_top5,
                            demo=_get_demo(), home_top=_get_home_top(), open_studios=_open_studios(),
                            catalog_formats=CATALOG_FORMATS,

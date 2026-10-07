@@ -337,21 +337,27 @@
   <div class="section-block">
     <div class="stats-grid">
       <div class="stat-card">
-        <b>{{ occupied }}</b>
-        <span>активных студий</span>
+        <b>{{ overview.confirmed }}</b>
+        <span>✅ подтверждённых студий</span>
       </div>
       <div class="stat-card">
-        <b>{{ slot_count - occupied }}</b>
-        <span>мест свободно</span>
+        <b>{{ overview.unconfirmed }}</b>
+        <span>⏳ не подтверждены (ждут владельца)</span>
+      </div>
+      <div class="stat-card">
+        <b>{{ overview.boosts }}</b>
+        <span>платных бустов сейчас</span>
+      </div>
+      <div class="stat-card">
+        <b>${{ overview.boost_income }}</b>
+        <span>доход с бустов / мес</span>
       </div>
       <div class="stat-card">
         <b>{{ total_clicks }}</b>
-        <span>кликов всего</span>
+        <span>кликов по карточкам</span>
       </div>
-      <div class="stat-card">
-        <b>${{ occupied * 0 }}</b>
-        <span>доход/мес (примерно)</span>
-      </div>
+    </div>
+    {% if overview.tests %}<div style="font-size:12.5px;color:#9aa0aa;margin:-6px 0 16px">🧪 Тестовых мест в базе: {{ overview.tests }} — в цифры не входят. Удалить: «Каталог студий» → «🗑 Удалить тестовые».</div>{% endif %}
     </div>
 
     <div class="city-stats" style="margin-bottom:32px">
@@ -395,27 +401,16 @@
     </div>
 
     <div class="city-stats">
-      <h3>Активные студии по городам</h3>
-      {% set city_counts = {} %}
-      {% for s in slots %}
-        {% if s.get('status') == 'active' and s.get('name') %}
-          {% set city = s.get('city', 'Неизвестно') %}
-          {% if city in city_counts %}
-            {% set _ = city_counts.update({city: city_counts[city] + 1}) %}
-          {% else %}
-            {% set _ = city_counts.update({city: 1}) %}
-          {% endif %}
-        {% endif %}
-      {% endfor %}
-      {% if city_counts %}
-        {% for city, count in city_counts.items() %}
+      <h3>Студии по городам ({{ overview.cities }})</h3>
+      {% if overview.city_rows %}
+        {% for c, conf, unconf in overview.city_rows %}
         <div class="city-row">
-          <span>{{ city }}</span>
-          <span style="color:#e91e8c;font-weight:700">{{ count }} студ.</span>
+          <span>{{ c }}</span>
+          <span><span style="color:#2bd576;font-weight:700">✅ {{ conf }}</span> &nbsp; <span style="color:#9aa0aa">⏳ {{ unconf }}</span></span>
         </div>
         {% endfor %}
       {% else %}
-        <div style="color:#555;text-align:center;padding:20px">Нет активных студий</div>
+        <div style="color:#555;text-align:center;padding:20px">Нет студий</div>
       {% endif %}
     </div>
   </div>
