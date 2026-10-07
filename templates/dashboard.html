@@ -555,6 +555,7 @@
       </div>
     </div>
 
+    <div id="catalogTotals" style="font-size:14px;color:#cfd3dc;margin:4px 0 12px"></div>
     <table class="city-table" id="cityTable"><tbody></tbody></table>
 
     <div id="studioGridWrap" style="display:none;margin-top:24px">
@@ -1189,32 +1190,38 @@ function studioCardHtml(s) {
 const OPEN_STUDIOS = {{ open_studios | tojson }};
 function renderCityTable() {
   const q = (document.getElementById('studioSearch').value || '').trim().toLowerCase();
-  const occupied = ALL_SLOTS.filter(s => s.name && s.status === 'active');
+  // подтверждённые = реальные размещённые студии (тестовые не считаем)
+  const confirmed = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.is_test_seed);
+  const tests = ALL_SLOTS.filter(s => s.name && s.status === 'active' && s.is_test_seed).length;
   const byCity = {};
-  const row = c => (byCity[c] = byCity[c] || {total: 0, paid: 0, open: 0});
-  occupied.forEach(s => {
+  const row = c => (byCity[c] = byCity[c] || {conf: 0, paid: 0, open: 0});
+  confirmed.forEach(s => {
     const r = row(s.city || 'Без города');
-    r.total++;
+    r.conf++;
     if (PAID_TIERS.includes(s.boost_tier)) r.paid++;
   });
-  OPEN_STUDIOS.forEach(s => { const r = row(s.city || 'Без города'); r.total++; r.open++; });
+  OPEN_STUDIOS.forEach(s => { row(s.city || 'Без города').open++; });
+  document.getElementById('catalogTotals').innerHTML =
+    `✅ Подтверждены: <b>${confirmed.length}</b> &nbsp;·&nbsp; ⏳ Не подтверждены: <b>${OPEN_STUDIOS.length}</b> &nbsp;·&nbsp; 🏙 Городов: <b>${Object.keys(byCity).length}</b>` +
+    (tests ? ` &nbsp;·&nbsp; <span style="color:#9aa0aa">🧪 тестовых мест: ${tests} (в подсчёт не входят)</span>` : '');
   const cities = Object.keys(byCity)
     .filter(c => !q || c.toLowerCase().includes(q))
-    .sort((a, b) => byCity[b].total - byCity[a].total);
+    .sort((a, b) => (byCity[b].conf + byCity[b].open) - (byCity[a].conf + byCity[a].open));
 
   const tbody = document.querySelector('#cityTable tbody');
   if (!cities.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="cat-empty">${Object.keys(byCity).length ? 'Город не найден' : 'Пока нет студий'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="cat-empty">${Object.keys(byCity).length ? 'Город не найден' : 'Пока нет студий'}</td></tr>`;
     return;
   }
   tbody.innerHTML =
-    `<tr><th>Город</th><th>Студий всего</th><th>Не подтверждены</th><th>Платных мест</th></tr>` +
+    `<tr><th>Город</th><th>Всего</th><th>✅ Подтверждены</th><th>⏳ Не подтверждены</th><th>Платных мест</th></tr>` +
     cities.map(c => {
       const d = byCity[c];
       const pct = Math.min(100, Math.round(d.paid / PAID_CAP_PER_CITY * 100));
       return `<tr class="city-row-clickable" onclick="openCityStudios('${c.replace(/'/g, "\\'")}')">
         <td>📍 ${c}</td>
-        <td>${d.total}</td>
+        <td>${d.conf + d.open}</td>
+        <td>${d.conf || '—'}</td>
         <td style="color:#9aa0aa">${d.open || '—'}</td>
         <td><span class="paid-bar"><span style="width:${pct}%"></span></span>${d.paid}/${PAID_CAP_PER_CITY}</td>
       </tr>`;
@@ -1242,13 +1249,17 @@ function openVacFromHome(key) {
 }
 
 function openCityStudios(city) {
-  const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && (s.city || 'Без города') === city);
+  const inCity = s => (s.city || 'Без города') === city;
+  const list = ALL_SLOTS.filter(s => s.name && s.status === 'active' && !s.is_test_seed && inCity(s));
+  const open = OPEN_STUDIOS.filter(inCity);
   document.getElementById('studioGridCity').textContent = '📍 ' + city;
-  const open = OPEN_STUDIOS.filter(s => (s.city || 'Без города') === city);
-  document.getElementById('studioGridSummary').textContent = `${list.length} размещено · ${open.length} не подтверждены (из открытых источников, ждут регистрации владельца)`;
-  document.getElementById('studioGrid').innerHTML = list.map(studioCardHtml).join('') +
-    (open.length ? '<div style="grid-column:1/-1;margin-top:10px;color:#9aa0aa;font-size:13px;line-height:1.8"><b>Не подтверждены:</b> ' +
-      open.map(s => escHtml(s.name)).join(' · ') + '</div>' : '');
+  document.getElementById('studioGridSummary').textContent = `✅ Подтверждены: ${list.length} · ⏳ Не подтверждены: ${open.length}`;
+  document.getElementById('studioGrid').innerHTML =
+    '<div style="grid-column:1/-1;font-weight:700;margin:4px 0">✅ Подтверждены (' + list.length + ')</div>' +
+    (list.length ? list.map(studioCardHtml).join('') : '<div style="grid-column:1/-1;color:#9aa0aa;font-size:13px">Пока нет</div>') +
+    '<div style="grid-column:1/-1;font-weight:700;margin:16px 0 4px">⏳ Не подтверждены (' + open.length + ') — из открытых источников, ждут регистрации владельца</div>' +
+    (open.length ? '<div style="grid-column:1/-1;color:#cfd3dc;font-size:13.5px;line-height:1.9">' + open.map((s, i) => (i + 1) + '. ' + escHtml(s.name)).join('<br>') + '</div>'
+                 : '<div style="grid-column:1/-1;color:#9aa0aa;font-size:13px">Нет</div>');
   document.getElementById('studioGridWrap').style.display = 'block';
   document.getElementById('studioGridWrap').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
