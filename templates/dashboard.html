@@ -549,16 +549,6 @@
       </form>
     </div>
 
-    <div style="margin-bottom:28px">
-      <div style="font-size:13px;color:#9aa0aa;font-weight:700;margin-bottom:6px">🎭 Демо-заглушки — показываются в каталоге вместо пустого списка, пока настоящих студий нет</div>
-      <div style="font-size:12.5px;color:#666;margin-bottom:12px">Появится хотя бы одна настоящая студия — заглушки исчезнут сами. Можно добавлять/убирать сколько угодно, вплоть до нуля.</div>
-      <div class="cat-grid" id="demoStudioPreview"></div>
-      <div id="demoStudioRows" style="margin-top:16px"></div>
-      <div class="actions-row" style="margin-top:6px">
-        <button type="button" class="btn btn-move" onclick="addDemoStudioRow()">+ Добавить заглушку</button>
-        <button type="button" class="btn btn-save" onclick="saveDemoStudios()">💾 Сохранить заглушки</button>
-      </div>
-    </div>
 
     <div class="add-card" id="studioAddCard">
       <div id="studioAddFields"></div>
@@ -868,7 +858,7 @@ function saveDemoStudios() {
   document.body.appendChild(form);
   form.submit();
 }
-renderDemoStudios();
+if (document.getElementById('demoStudioRows')) renderDemoStudios();
 
 /* ---------- Кроп фото для демо-студий (800×500, тот же кроп-тул, что у студий на сайте) ---------- */
 const CROP_W = 800, CROP_H = 500;

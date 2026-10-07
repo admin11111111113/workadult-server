@@ -96,10 +96,11 @@ def _get_demo():
     свободно. Пока никто ничего не сохранял (узла ещё нет) — 3 дефолтных."""
     raw = db.reference(_DEMO_REF).get()
     if not raw:
-        return {"studios": [dict(s) for s in DEMO_DEFAULTS["studios"]], "vacancies": []}
+        return {"studios": [], "vacancies": []}
     studios = [s for s in _as_list(raw.get("studios")) if isinstance(s, dict)]
     # Демо-вакансии отключены: при пустой ленте сайт пишет «вакансий пока нет».
-    return {"studios": studios, "vacancies": []}
+    # Демо-студии тоже отключены: каталог показывает только реальные студии.
+    return {"studios": [], "vacancies": []}
 
 
 HOME_TOP_FIELDS = ("name", "city", "percent", "photo", "contact", "tier")
