@@ -274,6 +274,7 @@ def api_listings():
         listing["boost_price"] = boost_price
         listing["promo_type"] = rec.get("promo_type") or "studio"
         listing["admin_rating"] = rec.get("admin_rating")
+        listing["is_test"] = bool(rec.get("is_test_seed"))
         out.append({"slot": n, "price": pricing["submit_price"], "listing": listing})
     return jsonify({"ok": True, "slots": out})
 
